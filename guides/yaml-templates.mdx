@@ -1,0 +1,206 @@
+---
+title: "YAML Templates"
+description: "Declarative Apache Beam YAML pipelines packaged as Dataflow Flex Templates — no Java or Python code required."
+---
+
+YAML Templates are Dataflow Flex Templates whose pipeline logic is expressed as a declarative [Apache Beam YAML](https://beam.apache.org/documentation/sdks/yaml/) file rather than Java or Python source code. The YAML file describes the pipeline's transforms, their configuration, and how data flows between them. The pipeline is then compiled and run on Dataflow like any other Flex Template.
+
+## Why use YAML Templates?
+
+<CardGroup cols={2}>
+  <Card title="No custom code" icon="file-code">
+    Define sources, transforms, and sinks in plain YAML. Beam handles all the plumbing.
+  </Card>
+  <Card title="Jinja templating" icon="brackets-curly">
+    Parameterise pipeline configuration with Jinja2 variables — the same syntax used by tools like dbt and Ansible.
+  </Card>
+  <Card title="Composable transforms" icon="puzzle-piece">
+    Chain built-in Beam transforms (`ReadFromKafka`, `WriteToBigQuery`, `MapToFields`, etc.) with minimal boilerplate.
+  </Card>
+  <Card title="Dead-letter support" icon="inbox">
+    Route transform errors to a separate sink (BigQuery table or Pub/Sub topic) by adding a single `error_handling` block.
+  </Card>
+</CardGroup>
+
+## Available YAML templates
+
+### Streaming
+
+| Template | Description |
+|---|---|
+| Kafka to BigQuery (YAML) | Reads from Apache Kafka, optionally applies a UDF, and writes to BigQuery. Failed records go to a dead-letter table. |
+| Kafka to Iceberg (YAML) | Streams Kafka messages into Apache Iceberg tables. |
+| Pub/Sub to BigTable (YAML) | Reads from a Pub/Sub topic, maps fields, and writes to Cloud Bigtable. |
+
+### Batch
+
+| Template | Description |
+|---|---|
+| MySQL to Iceberg (YAML) | Bulk-loads a MySQL table into Apache Iceberg. |
+| PostgreSQL to Iceberg (YAML) | Bulk-loads a PostgreSQL table into Apache Iceberg. |
+| SQLServer to Iceberg (YAML) | Bulk-loads a SQL Server table into Apache Iceberg. |
+| Iceberg to Postgres (YAML) | Reads an Iceberg table and writes the data to PostgreSQL. |
+| Iceberg to MySQL (YAML) | Reads an Iceberg table and writes the data to MySQL. |
+| Iceberg to SQLServer (YAML) | Reads an Iceberg table and writes the data to SQL Server. |
+
+## YAML template structure
+
+A YAML template file has three top-level sections: `template` (metadata), `pipeline` (transform graph), and `options` (Beam pipeline options).
+
+```yaml
+template:
+  name: "Kafka_to_BigQuery_Yaml"
+  category: "STREAMING"
+  type: "YAML"
+  display_name: "Kafka to BigQuery (YAML)"
+  description: >
+    Streaming pipeline that ingests Kafka messages and writes them to BigQuery.
+  streaming: true
+
+pipeline:
+  transforms:
+    - type: ReadFromKafka
+      config:
+        format: "{{ format | default('JSON') }}"
+        topic: "{{ topic }}"
+        bootstrap_servers: "{{ bootstrapServers }}"
+        auto_offset_reset_config: 'earliest'
+        error_handling:
+          output: errors
+
+    - type: WriteToBigQuery
+      name: WriteGoodMessages
+      input: ReadFromKafka
+      config:
+        table: "{{ table }}"
+        create_disposition: "{{ createDisposition | default('CREATE_IF_NEEDED') }}"
+        write_disposition: "{{ writeDisposition | default('WRITE_APPEND') }}"
+        error_handling:
+          output: errors
+
+    - type: WriteToBigQuery
+      name: WriteDeadLetterMessages
+      input: WriteGoodMessages.errors
+      config:
+        table: "{{ outputDeadletterTable }}"
+
+options:
+  streaming: true
+```
+
+<Note>
+  `{{ variable }}` placeholders use Jinja2 syntax. They are resolved at job submission time from the template parameters you pass via `gcloud` or the Dataflow API.
+</Note>
+
+## How to run a YAML template
+
+<Tabs>
+  <Tab title="Google-provided template">
+    Google-provided YAML templates are available in the `dataflow-templates` bucket. No build step is required.
+
+    ```bash
+    export PROJECT=my-project
+    export REGION=us-central1
+    export BUCKET=my-bucket
+
+    export BOOTSTRAP_SERVERS=kafka-broker:9092
+    export TOPIC=my-topic
+    export TABLE=$PROJECT:my_dataset.my_table
+    export DEADLETTER_TABLE=$PROJECT:my_dataset.my_table_errors
+
+    gcloud dataflow flex-template run "kafka-to-bigquery-yaml-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location \
+        "gs://dataflow-templates-$REGION/latest/flex/Kafka_to_BigQuery_Yaml" \
+      --parameters "bootstrapServers=$BOOTSTRAP_SERVERS" \
+      --parameters "topic=$TOPIC" \
+      --parameters "table=$TABLE" \
+      --parameters "outputDeadletterTable=$DEADLETTER_TABLE" \
+      --parameters "format=JSON"
+    ```
+  </Tab>
+  <Tab title="Beam YAML CLI">
+    For ad-hoc pipelines that are not packaged as a named template, use the `gcloud dataflow yaml` command:
+
+    ```bash
+    gcloud dataflow yaml run my-pipeline-job \
+      --region=us-central1 \
+      --yaml-pipeline-file=pipeline.yaml
+    ```
+
+    See the [gcloud dataflow yaml reference](https://cloud.google.com/sdk/gcloud/reference/dataflow/yaml) for all available flags.
+  </Tab>
+  <Tab title="YAML Template flex runner">
+    The generic **YAML Template** Flex Template accepts any Beam YAML pipeline as an inline string or a Cloud Storage path:
+
+    ```bash
+    export PROJECT=my-project
+    export REGION=us-central1
+    export BUCKET=my-bucket
+    export TEMPLATE_SPEC_GCSPATH="gs://$BUCKET/templates/flex/Yaml_Template"
+
+    gcloud dataflow flex-template run "yaml-template-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+      --parameters "yaml_pipeline_file=gs://$BUCKET/pipelines/my_pipeline.yaml"
+    ```
+  </Tab>
+</Tabs>
+
+## How to create a YAML template
+
+<Steps>
+  <Step title="Read the contribution guide">
+    Review the [code contributions documentation](https://github.com/GoogleCloudPlatform/DataflowTemplates/blob/main/contributor-docs/code-contributions.md) before starting.
+  </Step>
+  <Step title="Add the YAML blueprint">
+    Create your pipeline YAML file in `yaml/src/main/yaml/`. Use the structure shown above — `template`, `pipeline`, and `options` sections. Jinja2 variable references (`{{ variable }}`) become runtime parameters.
+  </Step>
+  <Step title="Generate the Java wrapper">
+    Run the generation script to produce the Java `@Template`-annotated class that Dataflow uses to register and stage the template:
+
+    ```shell
+    python yaml/src/main/python/generate_yaml_java_templates.py \
+      yaml/src/main/yaml/YOUR_TEMPLATE_FILE.yaml
+    ```
+
+    Place the generated Java file under `yaml/src/main/java/com/google/cloud/teleport/templates/yaml/`.
+  </Step>
+  <Step title="Write an integration test">
+    Create an integration test in `yaml/src/test/java/com/google/cloud/teleport/templates/yaml/` and run it:
+
+    ```shell
+    mvn test -pl yaml \
+      -Dtest=YourTemplateIT \
+      -Dproject=my-project \
+      -DartifactBucket=my-gcs-bucket
+    ```
+  </Step>
+  <Step title="Stage the template">
+    Build and stage the template to Cloud Storage:
+
+    ```shell
+    export PROJECT=my-project
+    export BUCKET=my-gcs-bucket
+    export ARTIFACT_REGISTRY=us-central1-docker.pkg.dev/$PROJECT/my-repo
+
+    mvn clean package -PtemplatesStage \
+      -DskipTests \
+      -DprojectId="$PROJECT" \
+      -DbucketName="$BUCKET" \
+      -DartifactRegistry="$ARTIFACT_REGISTRY" \
+      -DstagePrefix="templates" \
+      -DtemplateName="Your_Template_Name" \
+      -f yaml
+    ```
+  </Step>
+  <Step title="Generate documentation">
+    Run the documentation generation script described in the [contributor documentation](https://github.com/GoogleCloudPlatform/DataflowTemplates/blob/main/contributor-docs/code-contributions.md#generated-documentation) to produce the template's README.
+  </Step>
+</Steps>
+
+<Warning>
+  The YAML blueprint file and the Java wrapper must stay in sync. If you edit the YAML file after initial generation, re-run the generation script or update the Java class manually.
+</Warning>

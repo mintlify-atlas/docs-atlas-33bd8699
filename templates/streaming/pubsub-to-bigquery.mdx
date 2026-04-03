@@ -1,0 +1,134 @@
+---
+title: "Pub/Sub to BigQuery"
+description: "Stream JSON-formatted messages from a Pub/Sub topic or subscription into a BigQuery table."
+---
+
+## Overview
+
+The Pub/Sub to BigQuery templates are streaming pipelines that read JSON-formatted messages from a Pub/Sub source and write them to a BigQuery table. Use these templates as a quick solution to move Pub/Sub data into BigQuery for analytics and querying.
+
+Two variants are available:
+
+- **Pub/Sub Topic to BigQuery** (`PubSub_to_BigQuery`) — reads from a Pub/Sub topic directly.
+- **Pub/Sub Subscription to BigQuery** (`PubSub_Subscription_to_BigQuery`) — reads from a named Pub/Sub subscription.
+
+Both are classic (non-flex) Dataflow templates. Messages must be valid JSON that maps to the target BigQuery table schema. Messages that fail to parse or insert are written to a configurable dead-letter table.
+
+## Parameters
+
+### Required parameters
+
+<ParamField path="outputTableSpec" type="string" required>
+  The BigQuery output table location in the format `PROJECT_ID:DATASET_NAME.TABLE_NAME`. For example, `my-project:my_dataset.my_table`.
+</ParamField>
+
+<ParamField path="inputTopic" type="string" required>
+  The Pub/Sub topic to read input from, in the format `projects/PROJECT_ID/topics/TOPIC_NAME`. **Topic variant only.**
+</ParamField>
+
+<ParamField path="inputSubscription" type="string" required>
+  The Pub/Sub subscription to read input from, in the format `projects/PROJECT_ID/subscriptions/SUBSCRIPTION_NAME`. **Subscription variant only.**
+</ParamField>
+
+### Optional parameters
+
+<ParamField path="outputDeadletterTable" type="string">
+  The BigQuery table for messages that fail to reach the output table, in the format `PROJECT_ID:DATASET_NAME.TABLE_NAME`. The table is created automatically if it does not exist. Default: `OUTPUT_TABLE_SPEC_error_records`.
+</ParamField>
+
+<ParamField path="javascriptTextTransformGcsPath" type="string">
+  The Cloud Storage URI of the `.js` file that defines a JavaScript UDF. For example, `gs://my-bucket/my-udfs/my_file.js`.
+</ParamField>
+
+<ParamField path="javascriptTextTransformFunctionName" type="string">
+  The name of the JavaScript UDF to invoke. For example, if your function is `myTransform(inJson) { ... }`, set this to `myTransform`.
+</ParamField>
+
+<ParamField path="javascriptTextTransformReloadIntervalMinutes" type="number">
+  How frequently, in minutes, to check Cloud Storage for UDF file changes and reload. Set to `0` to disable hot reloading. Default: `0`.
+</ParamField>
+
+## Running the template
+
+<Tabs>
+  <Tab title="Topic variant">
+
+<Steps>
+  <Step title="Set environment variables">
+    ```bash
+    export PROJECT="my-project"
+    export REGION="us-central1"
+    export OUTPUT_TABLE_SPEC="my-project:my_dataset.my_table"
+    export INPUT_TOPIC="projects/my-project/topics/my-topic"
+    # Optional
+    export OUTPUT_DEADLETTER_TABLE="my-project:my_dataset.my_table_error_records"
+    ```
+  </Step>
+  <Step title="Run the job">
+    ```bash
+    gcloud dataflow jobs run "pubsub-to-bigquery-$(date +'%Y%m%d-%H%M%S')" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --gcs-location "gs://dataflow-templates-$REGION/latest/PubSub_to_BigQuery" \
+      --parameters "outputTableSpec=$OUTPUT_TABLE_SPEC" \
+      --parameters "inputTopic=$INPUT_TOPIC" \
+      --parameters "outputDeadletterTable=$OUTPUT_DEADLETTER_TABLE"
+    ```
+  </Step>
+</Steps>
+
+  </Tab>
+  <Tab title="Subscription variant">
+
+<Steps>
+  <Step title="Set environment variables">
+    ```bash
+    export PROJECT="my-project"
+    export REGION="us-central1"
+    export OUTPUT_TABLE_SPEC="my-project:my_dataset.my_table"
+    export INPUT_SUBSCRIPTION="projects/my-project/subscriptions/my-subscription"
+    # Optional
+    export OUTPUT_DEADLETTER_TABLE="my-project:my_dataset.my_table_error_records"
+    ```
+  </Step>
+  <Step title="Run the job">
+    ```bash
+    gcloud dataflow jobs run "pubsub-subscription-to-bigquery-$(date +'%Y%m%d-%H%M%S')" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --gcs-location "gs://dataflow-templates-$REGION/latest/PubSub_Subscription_to_BigQuery" \
+      --parameters "outputTableSpec=$OUTPUT_TABLE_SPEC" \
+      --parameters "inputSubscription=$INPUT_SUBSCRIPTION" \
+      --parameters "outputDeadletterTable=$OUTPUT_DEADLETTER_TABLE"
+    ```
+  </Step>
+</Steps>
+
+  </Tab>
+</Tabs>
+
+## Running via the console
+
+Open the [Dataflow Create job from template](https://console.cloud.google.com/dataflow/createjob) page, then select either **Pub/Sub Topic to BigQuery** or **Pub/Sub Subscription to BigQuery** from the template list.
+
+## User-defined functions (UDFs)
+
+Both templates support JavaScript UDFs, which let you transform each incoming message before it is written to BigQuery. The UDF receives the raw JSON string and must return a JSON string.
+
+```javascript
+// Example UDF: add a processing timestamp to each record
+function myTransform(inJson) {
+  var obj = JSON.parse(inJson);
+  obj.processed_at = new Date().toISOString();
+  return JSON.stringify(obj);
+}
+```
+
+Store your `.js` file in Cloud Storage and provide its URI in `javascriptTextTransformGcsPath` and the function name in `javascriptTextTransformFunctionName`.
+
+## Notes
+
+- **Schema**: The BigQuery table must already exist with a schema that matches the JSON fields in your Pub/Sub messages, or you must allow BigQuery to auto-detect schema. Fields not present in the table schema are dropped silently.
+- **Dead-letter table**: Messages that fail JSON parsing or BigQuery insertion are routed to the dead-letter table rather than causing the pipeline to fail.
+- **Delivery semantics**: These are classic templates using the standard BigQuery streaming insert API. At-least-once delivery applies — duplicate rows are possible during retries.
+- **UDF hot reload**: Set `javascriptTextTransformReloadIntervalMinutes` to a non-zero value to reload your UDF file from Cloud Storage while the pipeline is running, without restarting the job.

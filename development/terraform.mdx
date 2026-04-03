@@ -1,0 +1,116 @@
+---
+title: "Terraform"
+description: "Generate Terraform modules for Dataflow Templates that prompt for template parameters and launch Dataflow jobs."
+---
+
+## Overview
+
+This repository can generate a [Terraform module](https://developer.hashicorp.com/terraform/language/modules) for each template. Each generated module:
+
+- Prompts users for template-specific parameters
+- Launches a Dataflow job using those parameters
+
+Terraform modules are generated automatically from template metadata — you do not write them by hand.
+
+---
+
+## Plugin artifact dependencies
+
+The Terraform generation process relies on the following artifact templates from the core plugin:
+
+- `plugins/core-plugin/src/main/resources/terraform-classic-template.tf`
+- `plugins/core-plugin/src/main/resources/terraform-flex-template.tf`
+
+These are produced by the [`cicd/cmd/run-terraform-schema`](https://github.com/GoogleCloudPlatform/DataflowTemplates/tree/main/cicd/cmd/run-terraform-schema) tool. See its README for further details on the schema format.
+
+<Note>
+  Install the Templates Maven Plugin before generating Terraform modules. See [Development Setup](/development/setup#installing-the-templates-maven-plugin) for instructions.
+</Note>
+
+---
+
+## Generating modules
+
+<Tabs>
+  <Tab title="Classic templates (v1)">
+    Run the following command from the repository root to generate Terraform modules for all classic templates:
+
+    ```bash
+    mvn clean prepare-package \
+      -DskipTests \
+      -PtemplatesTerraform \
+      -pl v1 -am
+    ```
+
+    After generation, format the output:
+
+    ```bash
+    terraform fmt -recursive v1
+    ```
+
+    The generated modules are written to `v1/terraform/`. Each template gets its own subdirectory.
+  </Tab>
+  <Tab title="Flex templates (v2)">
+    Run the following command to generate Terraform modules for a specific Flex Template module:
+
+    ```bash
+    mvn clean prepare-package \
+      -DskipTests \
+      -PtemplatesTerraform \
+      -pl v2/googlecloud-to-googlecloud -am
+    ```
+
+    Replace `-pl v2/googlecloud-to-googlecloud` with the module path for your template (e.g., `-pl v2/bigquery-to-bigtable`).
+
+    After generation, format the output:
+
+    ```bash
+    terraform fmt -recursive v2
+    ```
+
+    The generated modules are written to `v2/<source>-to-<sink>/terraform/`. For example, the BigQuery to Bigtable template generates its module at `v2/bigquery-to-bigtable/terraform/`.
+  </Tab>
+</Tabs>
+
+<Warning>
+  Always run `terraform fmt` after generating modules. Generated files are not pre-formatted and will fail Terraform linting checks without this step.
+</Warning>
+
+---
+
+## Output locations
+
+| Template type | Generated location |
+|---------------|-------------------|
+| Classic (v1) | `v1/terraform/<TemplateName>/` |
+| Flex (v2) | `v2/<module-name>/terraform/<TemplateName>/` |
+
+For example:
+
+```
+v1/terraform/
+└── Cloud_PubSub_to_GCS_Text/
+    └── main.tf
+
+v2/bigquery-to-bigtable/terraform/
+└── BigQuery_to_Bigtable/
+    └── main.tf
+```
+
+---
+
+## Updating generated modules
+
+Terraform modules are regenerated as part of the CI/CD pipeline when template metadata changes. If you add or modify `@Template` or `@TemplateParameter` annotations, regenerate the Terraform modules before opening a pull request:
+
+```bash
+# For a specific v2 module
+mvn clean prepare-package \
+  -DskipTests \
+  -PtemplatesTerraform \
+  -pl v2/<your-module> -am
+
+terraform fmt -recursive v2
+```
+
+Commit the generated files alongside your annotation changes.

@@ -1,0 +1,152 @@
+---
+title: "BigQuery to Bigtable"
+description: "Export rows from a BigQuery table or query result into Cloud Bigtable using a Flex Template batch pipeline."
+---
+
+## Overview
+
+The BigQuery to Bigtable template is a batch Flex Template pipeline that reads rows from a BigQuery table (or the result of a SQL query) and writes them into a Cloud Bigtable table.
+
+Each BigQuery row becomes a Bigtable row. One column in the BigQuery result must be designated as the Bigtable row key via the `readIdColumn` parameter. All remaining columns are written into a single column family that you specify.
+
+Use this template to:
+- Seed a Bigtable table from historical BigQuery data.
+- Export query results (aggregations, joins) to Bigtable for low-latency serving.
+- Perform one-time or periodic batch loads.
+
+## Parameters
+
+### Required parameters
+
+<ParamField path="readIdColumn" type="string" required>
+  The name of the BigQuery column whose value will be used as the Bigtable row key. This column must be present in every row.
+</ParamField>
+
+<ParamField path="bigtableWriteInstanceId" type="string" required>
+  The ID of the Bigtable instance to write to.
+</ParamField>
+
+<ParamField path="bigtableWriteTableId" type="string" required>
+  The ID of the Bigtable table to write rows into. The table must already exist.
+</ParamField>
+
+<ParamField path="bigtableWriteColumnFamily" type="string" required>
+  The name of the Bigtable column family into which all BigQuery columns (except the row key column) are written.
+</ParamField>
+
+### Optional parameters
+
+<ParamField path="inputTableSpec" type="string">
+  The BigQuery table to read from, in the format `PROJECT:DATASET.TABLE`. The template reads directly via the BigQuery Storage Read API. You must specify either `inputTableSpec` or `query`.
+</ParamField>
+
+<ParamField path="query" type="string">
+  A GoogleSQL (or Legacy SQL) query whose results are written to Bigtable. Use fully-qualified table names if the dataset is in a different project than the Dataflow job. You must specify either `inputTableSpec` or `query`. If both are set, `query` takes precedence.
+</ParamField>
+
+<ParamField path="useLegacySql" type="boolean">
+  Set to `true` to use Legacy SQL syntax for the `query` parameter. Only applies when `query` is set. Defaults to `false`.
+</ParamField>
+
+<ParamField path="queryLocation" type="string">
+  The BigQuery location to use when running the query. Required when reading from an authorized view without underlying table permissions. For example, `US`.
+</ParamField>
+
+<ParamField path="queryTempDataset" type="string">
+  An existing BigQuery dataset to use for temporary tables created during query execution. For example, `temp_dataset`.
+</ParamField>
+
+<ParamField path="timestampColumn" type="string">
+  The BigQuery column whose value is used as the Bigtable cell timestamp. The value must be an `INT64` in millisecond precision. If omitted, the default Bigtable write timestamp is used. The specified column is not written as a separate Bigtable column.
+</ParamField>
+
+<ParamField path="skipNullValues" type="boolean">
+  When `true`, null values are skipped instead of being written as empty values. Rows that have no non-null columns after skipping cannot be written and are dropped. Defaults to `false`.
+</ParamField>
+
+<ParamField path="outputDeadletterTable" type="string">
+  A BigQuery table for rows that could not be written to Bigtable. Created automatically if it does not exist. Defaults to `<outputTableSpec>_error_records`.
+</ParamField>
+
+<ParamField path="bigtableWriteAppProfile" type="string">
+  The ID of the Bigtable application profile to use. Defaults to the instance's default app profile.
+</ParamField>
+
+<ParamField path="bigtableWriteProjectId" type="string">
+  The Google Cloud project that contains the target Bigtable instance. Defaults to the Dataflow job's project.
+</ParamField>
+
+<ParamField path="KMSEncryptionKey" type="string">
+  A Cloud KMS key used to encrypt temporary BigQuery tables when using a query source. For example, `projects/your-project/locations/global/keyRings/your-keyring/cryptoKeys/your-key`.
+</ParamField>
+
+<ParamField path="bigtableRpcAttemptTimeoutMs" type="integer">
+  Timeout in milliseconds for each individual Bigtable RPC attempt.
+</ParamField>
+
+<ParamField path="bigtableRpcTimeoutMs" type="integer">
+  Total timeout in milliseconds for a Bigtable RPC operation across all retry attempts.
+</ParamField>
+
+<ParamField path="bigtableAdditionalRetryCodes" type="string">
+  Comma-separated list of additional gRPC status codes that should trigger a retry. For example, `RESOURCE_EXHAUSTED,DEADLINE_EXCEEDED`.
+</ParamField>
+
+<ParamField path="bigtableBulkWriteLatencyTargetMs" type="integer">
+  Latency target in milliseconds for Bigtable latency-based throttling.
+</ParamField>
+
+<ParamField path="bigtableBulkWriteMaxRowKeyCount" type="integer">
+  Maximum number of row keys per Bigtable batch write operation.
+</ParamField>
+
+<ParamField path="bigtableBulkWriteMaxRequestSizeBytes" type="integer">
+  Maximum number of bytes per Bigtable batch write operation.
+</ParamField>
+
+<ParamField path="bigtableBulkWriteFlowControl" type="boolean">
+  When `true`, enables server-side flow control signals to throttle bulk writes. Defaults to `false`.
+</ParamField>
+
+## Running the template
+
+<Steps>
+  <Step title="Run with gcloud (table source)">
+    ```bash
+    export PROJECT="PROJECT_ID"
+    export REGION="us-central1"
+    export TEMPLATE_SPEC_GCSPATH="gs://dataflow-templates-${REGION}/latest/flex/BigQuery_to_Bigtable"
+
+    gcloud dataflow flex-template run "bigquery-to-bigtable-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+      --parameters "readIdColumn=user_id" \
+      --parameters "inputTableSpec=your-project:your_dataset.your_table" \
+      --parameters "bigtableWriteInstanceId=my-bigtable-instance" \
+      --parameters "bigtableWriteTableId=my-bigtable-table" \
+      --parameters "bigtableWriteColumnFamily=cf"
+    ```
+  </Step>
+  <Step title="Run with gcloud (query source)">
+    ```bash
+    gcloud dataflow flex-template run "bigquery-to-bigtable-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+      --parameters "readIdColumn=user_id" \
+      --parameters "query=SELECT * FROM your_dataset.your_table WHERE active = true" \
+      --parameters "bigtableWriteInstanceId=my-bigtable-instance" \
+      --parameters "bigtableWriteTableId=my-bigtable-table" \
+      --parameters "bigtableWriteColumnFamily=cf"
+    ```
+  </Step>
+</Steps>
+
+## Notes
+
+- **Row key design** — The `readIdColumn` value becomes the Bigtable row key verbatim. Bigtable rows are sorted lexicographically by row key, so the choice of key column has significant impact on query patterns and hotspot avoidance. Consider pre-processing the key column value in a BigQuery view or query before running the template.
+- **Column family mapping** — All BigQuery columns (except the designated row key column and the optional timestamp column) are written into the single column family specified by `bigtableWriteColumnFamily`. If you need data in multiple column families, run the template multiple times with different queries and column family names.
+- **Table must exist** — The target Bigtable table and column family must already exist. The template does not create them.
+- **Input source** — You must specify exactly one of `inputTableSpec` or `query`. If both are provided, `query` takes precedence.
+- **Flex Template** — This template runs as a Flex Template (containerized). Use `gcloud dataflow flex-template run` rather than `gcloud dataflow jobs run`.

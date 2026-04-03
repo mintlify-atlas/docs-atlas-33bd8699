@@ -1,0 +1,307 @@
+---
+title: "User-Defined Functions (UDFs)"
+description: "Customise Dataflow template pipelines with JavaScript functions that enrich, filter, route, or transform records without modifying the template source code."
+---
+
+User-Defined Functions (UDFs) let you inject custom JavaScript logic into a Dataflow template pipeline without maintaining the full codebase. You write a short JavaScript function, upload it to Cloud Storage, and pass its location and name as template parameters. The pipeline calls your function once per record.
+
+## How UDFs work
+
+The template passes each record to your function as a **string**. Your function processes it and returns a **string**. If the function returns `undefined` or no value, the record is dropped from the output.
+
+```javascript
+/**
+ * @param {string} inJson  - The incoming record as a JSON string
+ * @return {string} outJson - The transformed record as a JSON string,
+ *                            or undefined to drop the record
+ */
+function transform(inJson) {
+  var obj = JSON.parse(inJson);
+  // ... your logic here ...
+  return JSON.stringify(obj);
+}
+```
+
+<Note>
+  The function must always be named **`transform`** unless the template documentation specifies otherwise. Some newer templates use the name `process`.
+</Note>
+
+## Which templates support UDFs
+
+| Template | UDF Input Type | Input Description | UDF Output Type | Output Description |
+|---|---|---|---|---|
+| Datastore Bulk Delete | String | JSON string of the entity | String | JSON string of the entity to delete; return `undefined` to skip |
+| Datastore to Pub/Sub | String | JSON string of the entity | String | Payload to publish to Pub/Sub |
+| Datastore to GCS Text | String | JSON string of the entity | String | A single line in the output file |
+| GCS Text to BigQuery | String | A single line from the input file | String | JSON string matching the destination table's schema |
+| Pub/Sub to BigQuery | String | String representation of the Pub/Sub payload | String | JSON string matching the destination table's schema |
+| Pub/Sub to Datastore | String | String representation of the Pub/Sub payload | String | JSON string of the entity to write to Datastore |
+| Pub/Sub to Splunk | String | String representation of the Pub/Sub payload | String | Event data for the Splunk HEC events endpoint |
+
+<Info>
+  The **Kafka to BigQuery (YAML)** template also supports UDFs through the `udfFunctionName` and `udfGcsPath` parameters.
+</Info>
+
+## UDF examples
+
+### Adding fields
+
+Use this pattern to enrich records with additional context fields before they land in the destination.
+
+```javascript
+/**
+ * Adds source metadata fields to every record.
+ * @param {string} inJson
+ * @return {string} outJson
+ */
+function transform(inJson) {
+  var obj = JSON.parse(inJson);
+  obj.dataFeed = "Real-time Transactions";
+  obj.dataSource = "POS";
+  return JSON.stringify(obj);
+}
+```
+
+### Filtering records
+
+Return `undefined` (or omit the return statement) to drop a record from the pipeline output.
+
+```javascript
+/**
+ * Drops any record where answerToLife is not 42.
+ * @param {string} inJson
+ * @return {string} outJson
+ */
+function transform(inJson) {
+  var obj = JSON.parse(inJson);
+  if (obj.hasOwnProperty('answerToLife') && obj.answerToLife === 42) {
+    return JSON.stringify(obj);
+  }
+  // No return → record is filtered out
+}
+```
+
+### Normalising and redacting fields
+
+Normalise field values, redact sensitive data, and remove redundant fields in one pass.
+
+```javascript
+/**
+ * Normalises source to lowercase, redacts sensitiveField,
+ * and removes redundantField.
+ * @param {string} inJson
+ * @return {string} outJson
+ */
+function transform(inJson) {
+  var obj = JSON.parse(inJson);
+
+  obj.source = (obj.source && obj.source.toLowerCase()) || "unknown";
+
+  if (obj.sensitiveField) {
+    obj.sensitiveField = "REDACTED";
+  }
+
+  if (obj.redundantField) {
+    delete obj.redundantField;
+  }
+
+  return JSON.stringify(obj);
+}
+```
+
+### Parsing CSV into JSON (GCS Text to BigQuery)
+
+The GCS Text to BigQuery template passes each file line as a raw string. Use a UDF to parse CSV lines into the JSON schema your BigQuery table expects.
+
+```javascript
+/**
+ * Converts a CSV line into a structured JSON object.
+ * Compatible with: Text Files on Cloud Storage to BigQuery
+ * @param {string} line  - Raw CSV line from the input file
+ * @return {string} outJson
+ */
+function transform(line) {
+  var values = line.split(',');
+
+  var obj = {
+    location: values[0],
+    name:     values[1],
+    age:      values[2],
+    color:    values[3],
+    coffee:   values[4]
+  };
+
+  return JSON.stringify(obj);
+}
+```
+
+### Routing to dead-letter queue
+
+Throw an error to route a record to the pipeline's dead-letter queue (where supported).
+
+```javascript
+/**
+ * Routes events without a 'severity' field to the dead-letter queue.
+ * Supported templates: Pub/Sub to BigQuery, Pub/Sub to Splunk,
+ *                      Pub/Sub to JDBC, Datastream to BigQuery, and others.
+ * @param {string} inJson
+ * @return {string} outJson
+ */
+function transform(inJson) {
+  var data = JSON.parse(inJson);
+
+  if (!data.hasOwnProperty('severity')) {
+    throw new Error("Unrecognized event. eventId='" + data.Id + "'");
+  }
+
+  return JSON.stringify(data);
+}
+```
+
+## Hosting UDF files on Cloud Storage
+
+UDF JavaScript files must be stored in Cloud Storage and accessible to the Dataflow workers.
+
+<Steps>
+  <Step title="Write your UDF file">
+    Save your function to a `.js` file. The file may contain helper functions, but must export a top-level `transform` function (or the name specified in the template parameter).
+
+    ```javascript
+    // my-udf.js
+    function transform(inJson) {
+      var obj = JSON.parse(inJson);
+      obj.processed_at = new Date().toISOString();
+      return JSON.stringify(obj);
+    }
+    ```
+  </Step>
+  <Step title="Upload to Cloud Storage">
+    ```bash
+    gsutil cp my-udf.js gs://my-bucket/udfs/my-udf.js
+    ```
+  </Step>
+  <Step title="Verify the file is readable">
+    ```bash
+    gsutil cat gs://my-bucket/udfs/my-udf.js
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Dataflow workers must have read access to the Cloud Storage path. If using a custom service account, grant it the `roles/storage.objectViewer` role on the bucket.
+</Warning>
+
+## Passing UDF parameters to a template
+
+UDF parameters vary slightly between templates, but typically follow this pattern:
+
+<Tabs>
+  <Tab title="GCS Text to BigQuery">
+    ```bash
+    gcloud dataflow flex-template run "gcs-to-bq-with-udf" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location \
+        "gs://dataflow-templates-$REGION/latest/flex/GCS_Text_to_BigQuery_Flex" \
+      --parameters "inputFilePattern=gs://my-bucket/data/*.json" \
+      --parameters "outputTable=$PROJECT:my_dataset.my_table" \
+      --parameters "JSONPath=gs://my-bucket/schemas/schema.json" \
+      --parameters "javascriptTextTransformGcsPath=gs://my-bucket/udfs/my-udf.js" \
+      --parameters "javascriptTextTransformFunctionName=transform"
+    ```
+  </Tab>
+  <Tab title="Pub/Sub to BigQuery">
+    ```bash
+    gcloud dataflow flex-template run "pubsub-to-bq-with-udf" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location \
+        "gs://dataflow-templates-$REGION/latest/flex/PubSub_Subscription_to_BigQuery" \
+      --parameters "inputSubscription=projects/$PROJECT/subscriptions/my-sub" \
+      --parameters "outputTableSpec=$PROJECT:my_dataset.my_table" \
+      --parameters "javascriptTextTransformGcsPath=gs://my-bucket/udfs/my-udf.js" \
+      --parameters "javascriptTextTransformFunctionName=transform"
+    ```
+  </Tab>
+  <Tab title="Pub/Sub to Splunk">
+    ```bash
+    gcloud dataflow flex-template run "pubsub-to-splunk-with-udf" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location \
+        "gs://dataflow-templates-$REGION/latest/flex/Cloud_PubSub_to_Splunk" \
+      --parameters "inputSubscription=projects/$PROJECT/subscriptions/my-sub" \
+      --parameters "url=https://splunk-hec.example.com:8088" \
+      --parameters "token=my-hec-token" \
+      --parameters "javascriptTextTransformGcsPath=gs://my-bucket/udfs/my-udf.js" \
+      --parameters "javascriptTextTransformFunctionName=transform"
+    ```
+  </Tab>
+</Tabs>
+
+## More UDF samples
+
+The repository ships a collection of ready-to-use samples under [`v2/common/src/main/resources/udf-samples/`](https://github.com/GoogleCloudPlatform/DataflowTemplates/tree/main/v2/common/src/main/resources/udf-samples):
+
+<AccordionGroup>
+  <Accordion title="enrich.js — add a source field">
+    Adds a `source` field with the value `pos` to every incoming event.
+
+    ```javascript
+    function process(inJson) {
+      const data = JSON.parse(inJson);
+      data.source = "pos";
+      return JSON.stringify(data);
+    }
+    ```
+  </Accordion>
+  <Accordion title="filter.js — drop DEBUG events">
+    Filters out events where `severity` equals `DEBUG`.
+
+    ```javascript
+    function process(inJson) {
+      const data = JSON.parse(inJson);
+      if (data.severity == "DEBUG") {
+        return null;
+      }
+      return JSON.stringify(data);
+    }
+    ```
+  </Accordion>
+  <Accordion title="transform_csv.js — CSV to JSON">
+    Converts a CSV line into a structured JSON object for BigQuery ingestion.
+
+    ```javascript
+    function process(line) {
+      const values = line.split(',');
+      const obj = {
+        location: values[0],
+        name:     values[1],
+        age:      values[2],
+        color:    values[3],
+        coffee:   values[4]
+      };
+      return JSON.stringify(obj);
+    }
+    ```
+  </Accordion>
+  <Accordion title="route.js — dead-letter routing">
+    Throws an error for unrecognised events to route them to the dead-letter queue.
+
+    ```javascript
+    function process(inJson) {
+      const data = JSON.parse(inJson);
+      if (!data.hasOwnProperty('severity')) {
+        throw new Error("Unrecognized event. eventId='" + data.Id + "'");
+      }
+      return JSON.stringify(data);
+    }
+    ```
+  </Accordion>
+  <Accordion title="enrich_log.js — Cloud Logging enrichment">
+    Adds `inputSubscription` and `callingAppId` to Cloud Logging log entries received from Pub/Sub.
+  </Accordion>
+  <Accordion title="transform_log_splunk.js — Splunk HEC metadata">
+    Sets Splunk HEC `index`, `source`, and `sourcetype` fields from Cloud Logging log entry content.
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,182 @@
+---
+title: "Cloud Spanner Export and Import"
+description: "Export a Cloud Spanner database to Avro files on Cloud Storage, or import Avro files from Cloud Storage back into Cloud Spanner."
+---
+
+## Overview
+
+Two complementary Classic Templates handle Spanner backup and restore via Avro files on Cloud Storage:
+
+- **Cloud Spanner to Avro Files on Cloud Storage** (`Cloud_Spanner_to_GCS_Avro`) — Exports an entire Spanner database (or a subset of tables) to Avro format in Cloud Storage.
+- **Avro Files on Cloud Storage to Cloud Spanner** (`GCS_Avro_to_Cloud_Spanner`) — Imports Avro files previously exported from Spanner back into a Spanner database.
+
+These templates are commonly used for:
+- **Backup and restore** — Export a database before a major schema change, then import to recover if needed.
+- **Cross-region migration** — Export from one Spanner instance and import into another in a different region.
+- **Seeding new instances** — Populate a new Spanner database from an existing one.
+
+### Export output structure
+
+The export job creates a folder inside `outputDir` that contains:
+
+- `spanner-export.json` — Top-level export manifest.
+- `TableName-manifest.json` — One per exported table.
+- `TableName.avro-#####-of-#####` — One or more Avro data files per table.
+
+## Parameters
+
+### Cloud Spanner to GCS Avro (Export)
+
+#### Required parameters
+
+<ParamField path="instanceId" type="string" required>
+  The Spanner instance ID of the database to export.
+</ParamField>
+
+<ParamField path="databaseId" type="string" required>
+  The Spanner database ID to export.
+</ParamField>
+
+<ParamField path="outputDir" type="string" required>
+  The Cloud Storage path where the export folder will be created. For example, `gs://your-bucket/exports`. The template creates a timestamped subdirectory under this path.
+</ParamField>
+
+#### Optional parameters
+
+<ParamField path="spannerProjectId" type="string">
+  The Google Cloud project containing the source Spanner database. Defaults to the Dataflow job's project.
+</ParamField>
+
+<ParamField path="tableNames" type="string">
+  A comma-separated list of tables to export. If omitted, all tables are exported. For tables in named schemas, use the fully-qualified name, e.g. `sch1.foo`. If specified without `shouldExportRelatedTables`, all parent and foreign-key referenced tables must be included manually.
+</ParamField>
+
+<ParamField path="shouldExportRelatedTables" type="boolean">
+  When `true`, automatically includes parent tables and foreign-key referenced tables for any tables specified in `tableNames`. Defaults to `false`.
+</ParamField>
+
+<ParamField path="snapshotTime" type="string">
+  A timestamp in RFC 3339 UTC `Zulu` format to read the database at a specific point in time. For example, `1990-12-31T23:59:60Z`. Must be in the past and within the maximum staleness period. Defaults to empty (current time).
+</ParamField>
+
+<ParamField path="spannerPriority" type="string">
+  Request priority for Spanner calls. One of `HIGH`, `MEDIUM`, or `LOW`. Defaults to `MEDIUM`.
+</ParamField>
+
+<ParamField path="dataBoostEnabled" type="boolean">
+  When `true`, uses Spanner Data Boost compute resources to run the export with near-zero impact on OLTP workloads. Requires the `spanner.databases.useDataBoost` IAM permission. Defaults to `false`.
+</ParamField>
+
+<ParamField path="shouldExportTimestampAsLogicalType" type="boolean">
+  When `true`, exports timestamps as Avro `long` with `timestamp-micros` logical type. When `false` (default), timestamps are exported as ISO-8601 strings at nanosecond precision.
+</ParamField>
+
+<ParamField path="avroTempDirectory" type="string">
+  A Cloud Storage path for temporary Avro files written during the export.
+</ParamField>
+
+### GCS Avro to Cloud Spanner (Import)
+
+#### Required parameters
+
+<ParamField path="instanceId" type="string" required>
+  The Spanner instance ID of the target database.
+</ParamField>
+
+<ParamField path="databaseId" type="string" required>
+  The Spanner database ID to import data into. The database schema must already match the exported Avro files.
+</ParamField>
+
+<ParamField path="inputDir" type="string" required>
+  The Cloud Storage path to the directory containing the exported Avro files (i.e., the path that contains `spanner-export.json`).
+</ParamField>
+
+#### Optional parameters
+
+<ParamField path="spannerProjectId" type="string">
+  The Google Cloud project containing the target Spanner database. Defaults to the Dataflow job's project.
+</ParamField>
+
+<ParamField path="spannerPriority" type="string">
+  Request priority for Spanner calls. One of `HIGH`, `MEDIUM`, or `LOW`. Defaults to `MEDIUM`.
+</ParamField>
+
+<ParamField path="waitForIndexes" type="boolean">
+  When `true`, the pipeline waits for all indexes to finish building before the job completes. When `false`, indexes may still be building after the job finishes. Defaults to `false`.
+</ParamField>
+
+<ParamField path="waitForForeignKeys" type="boolean">
+  When `true`, the pipeline waits for foreign key constraints to finish being applied. Defaults to `false`.
+</ParamField>
+
+<ParamField path="waitForChangeStreams" type="boolean">
+  When `true`, the pipeline waits for change streams to be created. Defaults to `true`.
+</ParamField>
+
+<ParamField path="waitForSequences" type="boolean">
+  When `true`, the pipeline waits for sequences to be created. Defaults to `true`.
+</ParamField>
+
+<ParamField path="earlyIndexCreateFlag" type="boolean">
+  When `true` (default), indexes are created before data loading if the number of DDL statements exceeds a threshold. Set to `false` to disable this optimization.
+</ParamField>
+
+<ParamField path="earlyIndexCreateThreshold" type="integer">
+  The number of indexes and foreign keys above which early index creation is triggered. Defaults to `40`.
+</ParamField>
+
+<ParamField path="ddlCreationTimeoutInMinutes" type="integer">
+  Timeout in minutes for DDL statements executed during import. Defaults to `30`.
+</ParamField>
+
+## Running the templates
+
+### Export: Cloud Spanner to GCS Avro
+
+<Steps>
+  <Step title="Run export with gcloud">
+    ```bash
+    export PROJECT="PROJECT_ID"
+    export REGION="us-central1"
+    export TEMPLATE_SPEC_GCSPATH="gs://dataflow-templates-${REGION}/latest/Cloud_Spanner_to_GCS_Avro"
+
+    gcloud dataflow jobs run "spanner-export-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+      --parameters "instanceId=my-spanner-instance" \
+      --parameters "databaseId=my-database" \
+      --parameters "outputDir=gs://your-bucket/exports" \
+      --parameters "spannerPriority=MEDIUM" \
+      --parameters "dataBoostEnabled=false"
+    ```
+  </Step>
+</Steps>
+
+### Import: GCS Avro to Cloud Spanner
+
+<Steps>
+  <Step title="Run import with gcloud">
+    ```bash
+    export PROJECT="PROJECT_ID"
+    export REGION="us-central1"
+    export TEMPLATE_SPEC_GCSPATH="gs://dataflow-templates-${REGION}/latest/GCS_Avro_to_Cloud_Spanner"
+
+    gcloud dataflow jobs run "spanner-import-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+      --parameters "instanceId=my-spanner-instance" \
+      --parameters "databaseId=my-database" \
+      --parameters "inputDir=gs://your-bucket/exports/spanner-export-folder"
+    ```
+  </Step>
+</Steps>
+
+## Notes
+
+- **Database schema must pre-exist for import** — The import template does not create tables or DDL. The target Spanner database must already have a schema that matches the Avro files being imported.
+- **inputDir must point to the export folder** — The `inputDir` for the import job must be the specific subdirectory created by the export job, the one containing `spanner-export.json`, not the parent `outputDir`.
+- **Data Boost** — Enabling `dataBoostEnabled` on the export job can significantly reduce impact on concurrent transactional workloads, but requires additional IAM permissions and may incur additional costs.
+- **Partial exports** — Use `tableNames` to export a subset of tables. Include all interleaved (parent) tables and tables referenced by foreign keys, or set `shouldExportRelatedTables=true` to have the template resolve them automatically.
+- **Classic Templates** — Both templates are Classic Templates. Use `gcloud dataflow jobs run` with `--gcs-location`.

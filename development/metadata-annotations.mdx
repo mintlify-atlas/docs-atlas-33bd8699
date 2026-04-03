@@ -1,0 +1,231 @@
+---
+title: "Metadata annotations"
+description: "Use Java annotations to define template metadata, parameter types, and integration test wiring as the single source of truth."
+---
+
+## Overview
+
+Dataflow Templates require more than just code — the Dataflow UI needs parameter descriptions, types, validation rules, and ordering to present a useful launch form. Rather than maintaining a separate metadata file, this repository uses Java annotations so the source code is the **single source of truth**.
+
+A set of utilities and Maven plugin goals read these annotations to generate:
+
+- Command and parameter spec files (used by the Dataflow service)
+- UI configuration (types, help text, ordering, validation)
+- Terraform module definitions
+
+---
+
+## `@Template`
+
+Every template class must be annotated with `@Template`. This declares the template's identity and links it to its options class.
+
+```java
+@Template(
+    name = "BigQuery_to_Elasticsearch",
+    category = TemplateCategory.BATCH,
+    displayName = "BigQuery to Elasticsearch",
+    description = "A pipeline which sends BigQuery records into an Elasticsearch instance as JSON documents.",
+    optionsClass = BigQueryToElasticsearchOptions.class,
+    flexContainerName = "bigquery-to-elasticsearch")
+public class BigQueryToElasticsearch {
+```
+
+### Fields
+
+<ParamField path="name" type="string" required>
+  The machine-readable identifier for the template. Used internally and in gcloud commands. Conventionally uses underscores (e.g., `BigQuery_to_Elasticsearch`).
+</ParamField>
+
+<ParamField path="category" type="TemplateCategory" required>
+  The category the template belongs to. Affects how it appears in the Dataflow UI. See [TemplateCategory values](#templatecategory-values) below.
+</ParamField>
+
+<ParamField path="displayName" type="string" required>
+  The human-readable name shown in the Dataflow UI and documentation.
+</ParamField>
+
+<ParamField path="description" type="string" required>
+  A short description of what the template does. Shown in the UI and documentation.
+</ParamField>
+
+<ParamField path="optionsClass" type="Class" required>
+  The `PipelineOptions` interface that defines this template's parameters. The annotation processor reads `@TemplateParameter` annotations from this class.
+</ParamField>
+
+<ParamField path="flexContainerName" type="string">
+  Required for Flex Templates. The name of the Docker container image. Must match the artifact name used during staging.
+</ParamField>
+
+<ParamField path="documentation" type="string">
+  URL to the official documentation page for this template.
+</ParamField>
+
+<ParamField path="contactInformation" type="string">
+  URL or address for support contact information.
+</ParamField>
+
+<ParamField path="requirements" type="string[]">
+  A list of prerequisites that must be satisfied before the template can run (e.g., output tables must exist).
+</ParamField>
+
+<ParamField path="streaming" type="boolean">
+  Set to `true` for streaming pipelines.
+</ParamField>
+
+<ParamField path="hidden" type="boolean">
+  When `true`, hides the template from public-facing documentation but keeps it functional.
+</ParamField>
+
+### `TemplateCategory` values
+
+| Value | Description |
+|-------|-------------|
+| `GET_STARTED` | Simple introductory templates for getting started with Dataflow |
+| `BATCH` | Batch processing templates that read bounded data |
+| `STREAMING` | Streaming templates that process unbounded data continuously |
+| `UTILITIES` | Helper templates for format conversion, data generation, etc. |
+
+---
+
+## `@TemplateParameter`
+
+A family of `@TemplateParameter.{Type}` annotations defines each parameter on the options interface. These annotations drive UI rendering, type validation, and documentation generation.
+
+The `order` field controls the display order in the Dataflow UI. Lower values appear first.
+
+### Text
+
+For freeform string inputs, including comma-separated lists.
+
+```java
+@TemplateParameter.Text(
+    order = 2,
+    optional = false,
+    regexes = {"[,a-zA-Z0-9._-]+"},
+    description = "Kafka topic(s) to read the input from",
+    helpText = "Kafka topic(s) to read the input from.",
+    example = "topic1,topic2")
+@Validation.Required
+String getInputTopics();
+```
+
+### GcsReadFile
+
+For Cloud Storage paths used as inputs. The UI renders a file picker.
+
+```java
+@TemplateParameter.GcsReadFile(
+    order = 1,
+    description = "Cloud Storage Input File(s)",
+    helpText = "Path of the file pattern glob to read from.",
+    example = "gs://your-bucket/path/*.csv")
+String getInputFilePattern();
+```
+
+### GcsWriteFolder
+
+For Cloud Storage paths used as output destinations. The UI renders a folder picker.
+
+```java
+@TemplateParameter.GcsWriteFolder(
+    order = 2,
+    description = "Output Cloud Storage file prefix",
+    helpText = "Path and filename prefix for writing output files. Ex: gs://your-bucket/counts")
+String getOutputPath();
+```
+
+### Boolean
+
+For true/false flags. Use `@Default.Boolean` to set the default value.
+
+```java
+@TemplateParameter.Boolean(
+    order = 11,
+    optional = true,
+    description = "Whether to use column alias to map the rows.",
+    helpText = "If enabled (set to true) the pipeline will consider column alias (\"AS\") instead of the column name to map the rows to BigQuery.")
+@Default.Boolean(false)
+Boolean getUseColumnAlias();
+```
+
+### Integer
+
+For numeric integer inputs. Use `@Default.Integer` to set the default value.
+
+```java
+@TemplateParameter.Integer(
+    order = 3,
+    optional = true,
+    description = "Maximum output shards",
+    helpText =
+        "The maximum number of output shards produced when writing. A higher number of shards"
+            + " means higher throughput for writing to Cloud Storage, but potentially higher"
+            + " data aggregation cost across shards when processing output Cloud Storage"
+            + " files. Default is runner dependent.")
+@Default.Integer(-1)
+int getNumShards();
+```
+
+### Enum
+
+For parameters with a fixed set of allowed values. The UI renders a dropdown. Use `enumOptions` to specify the allowed values.
+
+```java
+@TemplateParameter.Enum(
+    order = 21,
+    enumOptions = {"INDEX", "CREATE"},
+    optional = true,
+    description = "Build insert method",
+    helpText = "Whether to use INDEX (index, allows upsert) or CREATE (create, errors on duplicate _id) with Elasticsearch bulk requests.")
+@Default.Enum("CREATE")
+BulkInsertMethodOptions getBulkInsertMethod();
+```
+
+---
+
+## Parameter deprecation
+
+Dataflow Templates maintain full backwards compatibility — pipelines launched by automation or on a schedule should continue to work indefinitely. When renaming or removing a parameter, use `@Deprecated` rather than deleting it.
+
+```java
+@TemplateParameter.Text(
+    order = 21,
+    optional = true,
+    description = "Deprecated, use XYZ instead",
+    helpText = "This parameter has been deprecated, please use XYZ parameter instead")
+@Deprecated
+BulkInsertMethodOptions getBulkInsertMethod();
+```
+
+### Hiding deprecated parameters from the UI
+
+Add `hiddenUi = true` to keep the parameter available via gcloud and the REST API while removing it from the Dataflow UI launch form:
+
+```java
+@TemplateParameter.Text(
+    order = 21,
+    optional = true,
+    description = "Deprecated, use XYZ instead",
+    helpText = "This parameter has been deprecated, please use XYZ parameter instead",
+    hiddenUi = true)
+@Deprecated
+BulkInsertMethodOptions getBulkInsertMethod();
+```
+
+---
+
+## `@TemplateIntegrationTest`
+
+Integration test classes must be annotated with `@TemplateIntegrationTest` and extend `TemplateTestBase`. This wires the test class to a specific template, enabling automatic environment setup and template staging before tests run on Dataflow.
+
+```java
+@TemplateIntegrationTest(PubsubToText.class)
+@RunWith(JUnit4.class)
+public final class PubsubToTextIT extends TemplateTestBase {
+  // test cases
+}
+```
+
+The annotation takes the template class (not the options class) as its argument. The test framework uses this to locate and stage the correct template before test execution.
+
+See [Testing](/development/testing) for more details on writing integration tests.

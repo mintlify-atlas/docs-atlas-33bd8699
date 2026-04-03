@@ -1,0 +1,131 @@
+---
+title: "File Format Conversion"
+description: "Convert files stored in Cloud Storage between Avro, Parquet, and CSV formats using a Flex Template batch pipeline."
+---
+
+## Overview
+
+The File Format Conversion template is a batch Flex Template pipeline that reads files from Cloud Storage in one supported format and writes them to Cloud Storage in another. It is useful for transforming raw data files into columnar formats suitable for analytics, or for standardizing file formats across a data lake.
+
+### Supported conversions
+
+| Input Format | Output Format |
+|---|---|
+| CSV | Avro |
+| CSV | Parquet |
+| Avro | Parquet |
+| Parquet | Avro |
+
+<Note>
+  Converting Avro or Parquet to CSV is not supported. Conversions to CSV are not available in this template.
+</Note>
+
+## Parameters
+
+### Required parameters
+
+<ParamField path="inputFileFormat" type="string" required>
+  The format of the input files. Must be one of `avro`, `parquet`, or `csv`.
+</ParamField>
+
+<ParamField path="outputFileFormat" type="string" required>
+  The format of the output files. Must be one of `avro` or `parquet`.
+</ParamField>
+
+<ParamField path="inputFileSpec" type="string" required>
+  The Cloud Storage file pattern for the input files. For example, `gs://mybucket/input/*.csv`.
+</ParamField>
+
+<ParamField path="outputBucket" type="string" required>
+  The Cloud Storage directory where output files are written. Must end with a slash. For example, `gs://your-bucket/output/`.
+</ParamField>
+
+<ParamField path="schema" type="string" required>
+  The Cloud Storage path to the Avro schema file (`.avsc`). This schema is used for both reading and writing. For example, `gs://your-bucket/schema.avsc`.
+</ParamField>
+
+### Optional parameters
+
+<ParamField path="containsHeaders" type="boolean">
+  Whether the input CSV files contain a header row. Only applicable when `inputFileFormat` is `csv`. Defaults to `false`.
+</ParamField>
+
+<ParamField path="delimiter" type="string">
+  The column delimiter character in the input CSV files. Only applicable when `inputFileFormat` is `csv`. Defaults to `,`.
+</ParamField>
+
+<ParamField path="csvFormat" type="string">
+  The CSV format specification to use for parsing, as defined by Apache Commons CSV. Must match a predefined format name exactly. Defaults to `Default`.
+</ParamField>
+
+<ParamField path="csvFileEncoding" type="string">
+  Character encoding of the input CSV files. Allowed values: `US-ASCII`, `ISO-8859-1`, `UTF-8`, `UTF-16`. Defaults to `UTF-8`.
+</ParamField>
+
+<ParamField path="jsonSchemaPath" type="string">
+  The Cloud Storage path to a JSON schema file. For example, `gs://path/to/schema.json`. Defaults to `null`.
+</ParamField>
+
+<ParamField path="deadletterTable" type="string">
+  A BigQuery table where records that fail to convert are written. For example, `your-project:your-dataset.deadletter-table`.
+</ParamField>
+
+<ParamField path="outputFilePrefix" type="string">
+  Prefix applied to each output file name. Defaults to `output`.
+</ParamField>
+
+<ParamField path="numShards" type="integer">
+  The maximum number of output shards (files) to produce. Higher values increase write throughput but may increase aggregation cost. Defaults to Dataflow's automatic selection.
+</ParamField>
+
+<ParamField path="largeNumFiles" type="boolean">
+  Set to `true` when processing tens of thousands of input files. Enables an optimized file listing strategy. Defaults to `false`.
+</ParamField>
+
+<ParamField path="logDetailedCsvConversionErrors" type="boolean">
+  When `true`, detailed error messages are logged when CSV parsing fails. This may expose sensitive data in logs if the CSV contains confidential values. Defaults to `false`.
+</ParamField>
+
+## Running the template
+
+<Steps>
+  <Step title="Run with gcloud (CSV to Parquet example)">
+    ```bash
+    export PROJECT="PROJECT_ID"
+    export REGION="us-central1"
+    export TEMPLATE_SPEC_GCSPATH="gs://dataflow-templates-${REGION}/latest/flex/File_Format_Conversion"
+
+    gcloud dataflow flex-template run "file-format-conversion-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+      --parameters "inputFileFormat=csv" \
+      --parameters "outputFileFormat=parquet" \
+      --parameters "inputFileSpec=gs://your-bucket/input/*.csv" \
+      --parameters "outputBucket=gs://your-bucket/output/" \
+      --parameters "schema=gs://your-bucket/schema.avsc" \
+      --parameters "containsHeaders=true" \
+      --parameters "delimiter=,"
+    ```
+  </Step>
+  <Step title="Run with gcloud (Avro to Parquet example)">
+    ```bash
+    gcloud dataflow flex-template run "file-format-conversion-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+      --parameters "inputFileFormat=avro" \
+      --parameters "outputFileFormat=parquet" \
+      --parameters "inputFileSpec=gs://your-bucket/input/*.avro" \
+      --parameters "outputBucket=gs://your-bucket/output/" \
+      --parameters "schema=gs://your-bucket/schema.avsc"
+    ```
+  </Step>
+</Steps>
+
+## Notes
+
+- **Schema file is always required** — The `schema` parameter (Avro `.avsc` file) must be provided regardless of the input and output format combination. The schema defines the structure of the data for both reading and writing.
+- **CSV-specific parameters** — The `containsHeaders`, `delimiter`, `csvFormat`, and `csvFileEncoding` parameters only apply when `inputFileFormat` is `csv`. They are ignored for Avro and Parquet inputs.
+- **Output format restriction** — Output can only be Avro or Parquet. Converting to CSV is not supported by this template.
+- **Flex Template** — This template runs as a Flex Template. Use `gcloud dataflow flex-template run` with `--template-file-gcs-location`.

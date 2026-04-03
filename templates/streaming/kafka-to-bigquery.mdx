@@ -1,0 +1,295 @@
+---
+title: "Kafka to BigQuery"
+description: "Stream data from Apache Kafka topics into BigQuery tables using a Dataflow flex template."
+---
+
+## Overview
+
+The Apache Kafka to BigQuery templates are streaming pipelines that ingest data from one or more Kafka topics and write the resulting records into BigQuery. Errors during transformation or insertion are routed to a separate dead-letter table in BigQuery.
+
+Two flex template variants are available:
+
+- **Kafka to BigQuery** (`Kafka_to_BigQuery`) — classic flex template supporting JSON and AVRO message formats with JavaScript UDF support.
+- **Kafka to BigQuery Flex** (`Kafka_to_BigQuery_Flex`) — extended flex template with full authentication support (SASL/PLAIN, SASL/SCRAM-512, TLS, OAuth), Confluent Schema Registry integration, dynamic multi-table output, and offset commit support.
+
+## Parameters
+
+### Kafka to BigQuery (`Kafka_to_BigQuery`)
+
+#### Required parameters
+
+<ParamField path="outputTableSpec" type="string" required>
+  The BigQuery output table location in the format `PROJECT_ID:DATASET_NAME.TABLE_NAME`. For example, `my-project:my_dataset.my_table`.
+</ParamField>
+
+#### Optional parameters
+
+<ParamField path="bootstrapServers" type="string">
+  The Kafka bootstrap server list as a comma-separated list of `host:port` pairs. For example, `broker1:9092,broker2:9092`.
+</ParamField>
+
+<ParamField path="kafkaReadTopics" type="string">
+  The Kafka topics to read from as a comma-separated list. For example, `topic1,topic2`.
+</ParamField>
+
+<ParamField path="messageFormat" type="string">
+  The message format to read. Accepted values: `JSON`, `AVRO`. Default: `JSON`.
+</ParamField>
+
+<ParamField path="avroSchemaPath" type="string">
+  Cloud Storage path to an Avro schema file when `messageFormat` is `AVRO`. For example, `gs://my-bucket/schema.avsc`.
+</ParamField>
+
+<ParamField path="outputDeadletterTable" type="string">
+  BigQuery table for failed messages in the format `PROJECT_ID:DATASET_NAME.TABLE_NAME`. Created automatically if it does not exist. Default: `outputTableSpec_error_records`.
+</ParamField>
+
+<ParamField path="writeDisposition" type="string">
+  The BigQuery write disposition. Accepted values: `WRITE_APPEND`, `WRITE_EMPTY`, `WRITE_TRUNCATE`. Default: `WRITE_APPEND`.
+</ParamField>
+
+<ParamField path="createDisposition" type="string">
+  The BigQuery create disposition. Accepted values: `CREATE_IF_NEEDED`, `CREATE_NEVER`. Default: `CREATE_IF_NEEDED`.
+</ParamField>
+
+<ParamField path="useStorageWriteApi" type="boolean">
+  If `true`, the pipeline uses the BigQuery Storage Write API. Default: `false`.
+</ParamField>
+
+<ParamField path="useStorageWriteApiAtLeastOnce" type="boolean">
+  When using the Storage Write API, use at-least-once semantics instead of exactly-once. Applies only when `useStorageWriteApi` is `true`. Default: `false`.
+</ParamField>
+
+<ParamField path="numStorageWriteApiStreams" type="number">
+  Number of Storage Write API write streams. Required when `useStorageWriteApi` is `true` and `useStorageWriteApiAtLeastOnce` is `false`. Default: `0`.
+</ParamField>
+
+<ParamField path="storageWriteApiTriggeringFrequencySec" type="number">
+  Triggering frequency in seconds for the Storage Write API. Required when `useStorageWriteApi` is `true` and `useStorageWriteApiAtLeastOnce` is `false`.
+</ParamField>
+
+<ParamField path="javascriptTextTransformGcsPath" type="string">
+  Cloud Storage URI of the `.js` file defining a JavaScript UDF. For example, `gs://my-bucket/my-udfs/my_file.js`.
+</ParamField>
+
+<ParamField path="javascriptTextTransformFunctionName" type="string">
+  The name of the JavaScript UDF function to invoke.
+</ParamField>
+
+<ParamField path="javascriptTextTransformReloadIntervalMinutes" type="number">
+  How frequently, in minutes, to reload the UDF from Cloud Storage. Set to `0` to disable. Default: `0`.
+</ParamField>
+
+---
+
+### Kafka to BigQuery Flex (`Kafka_to_BigQuery_Flex`)
+
+#### Required parameters
+
+<ParamField path="readBootstrapServerAndTopic" type="string" required>
+  The Kafka bootstrap server and topic to read from. For example, `broker:9092;my-topic`.
+</ParamField>
+
+<ParamField path="kafkaReadAuthenticationMode" type="string" required>
+  The Kafka authentication mode. Accepted values: `NONE`, `SASL_PLAIN`, `SASL_SCRAM_512`, `TLS`, `APPLICATION_DEFAULT_CREDENTIALS`. Use `APPLICATION_DEFAULT_CREDENTIALS` for Google Cloud Managed Service for Apache Kafka.
+</ParamField>
+
+<ParamField path="messageFormat" type="string" required>
+  The Kafka message format. Accepted values: `AVRO_CONFLUENT_WIRE_FORMAT`, `AVRO_BINARY_ENCODING`, `JSON`. Default: `AVRO_CONFLUENT_WIRE_FORMAT`.
+</ParamField>
+
+<ParamField path="writeMode" type="string" required>
+  Whether to write to a single table or multiple tables. Accepted values: `SINGLE_TABLE_NAME`, `DYNAMIC_TABLE_NAMES`. `DYNAMIC_TABLE_NAMES` requires `AVRO_CONFLUENT_WIRE_FORMAT` and `SCHEMA_REGISTRY`. Default: `SINGLE_TABLE_NAME`.
+</ParamField>
+
+<ParamField path="useBigQueryDLQ" type="boolean" required>
+  If `true`, failed messages are written to a BigQuery dead-letter table with error metadata. Default: `false`.
+</ParamField>
+
+#### Optional parameters
+
+<ParamField path="outputTableSpec" type="string">
+  BigQuery table location in the format `project:dataset.table_name`. Required when `writeMode` is `SINGLE_TABLE_NAME`.
+</ParamField>
+
+<ParamField path="outputDataset" type="string">
+  BigQuery dataset for dynamic table output. Required when `writeMode` is `DYNAMIC_TABLE_NAMES`.
+</ParamField>
+
+<ParamField path="outputProject" type="string">
+  The BigQuery project for dynamic table output. Default: the Dataflow job project.
+</ParamField>
+
+<ParamField path="kafkaReadUsernameSecretId" type="string">
+  Secret Manager secret ID for the Kafka username when using `SASL_PLAIN`. For example, `projects/PROJECT_ID/secrets/SECRET_ID/versions/VERSION`.
+</ParamField>
+
+<ParamField path="kafkaReadPasswordSecretId" type="string">
+  Secret Manager secret ID for the Kafka password when using `SASL_PLAIN`.
+</ParamField>
+
+<ParamField path="kafkaReadKeystoreLocation" type="string">
+  Cloud Storage path to a Java KeyStore (JKS) file for TLS authentication. For example, `gs://my-bucket/keystore.jks`.
+</ParamField>
+
+<ParamField path="kafkaReadTruststoreLocation" type="string">
+  Cloud Storage path to a Java TrustStore (JKS) file for TLS authentication.
+</ParamField>
+
+<ParamField path="schemaRegistryConnectionUrl" type="string">
+  URL of the Confluent Schema Registry instance. Required when `schemaFormat` is `SCHEMA_REGISTRY`.
+</ParamField>
+
+<ParamField path="schemaFormat" type="string">
+  The schema source format. Accepted values: `SINGLE_SCHEMA_FILE`, `SCHEMA_REGISTRY`. Default: `SINGLE_SCHEMA_FILE`.
+</ParamField>
+
+<ParamField path="enableCommitOffsets" type="boolean">
+  Commit processed message offsets back to Kafka. Requires `consumerGroupId`. Default: `false`.
+</ParamField>
+
+<ParamField path="consumerGroupId" type="string">
+  The Kafka consumer group ID. Required when `enableCommitOffsets` is `true`.
+</ParamField>
+
+<ParamField path="kafkaReadOffset" type="string">
+  Starting offset when no committed offsets exist. Accepted values: `earliest`, `latest`. Default: `latest`.
+</ParamField>
+
+<ParamField path="writeDisposition" type="string">
+  BigQuery write disposition. Accepted values: `WRITE_APPEND`, `WRITE_EMPTY`, `WRITE_TRUNCATE`. Default: `WRITE_APPEND`.
+</ParamField>
+
+<ParamField path="createDisposition" type="string">
+  BigQuery create disposition. Accepted values: `CREATE_IF_NEEDED`, `CREATE_NEVER`. Default: `CREATE_IF_NEEDED`.
+</ParamField>
+
+<ParamField path="outputDeadletterTable" type="string">
+  BigQuery dead-letter table for failed messages in the format `PROJECT_ID:DATASET_NAME.TABLE_NAME`.
+</ParamField>
+
+<ParamField path="javascriptTextTransformGcsPath" type="string">
+  Cloud Storage URI of the `.js` file defining a JavaScript UDF.
+</ParamField>
+
+<ParamField path="javascriptTextTransformFunctionName" type="string">
+  The name of the JavaScript UDF function to invoke.
+</ParamField>
+
+## Running the template
+
+<Tabs>
+  <Tab title="Kafka to BigQuery">
+
+<Steps>
+  <Step title="Set environment variables">
+    ```bash
+    export PROJECT="my-project"
+    export REGION="us-central1"
+    export OUTPUT_TABLE_SPEC="my-project:my_dataset.my_table"
+    export BOOTSTRAP_SERVERS="broker1:9092,broker2:9092"
+    export KAFKA_READ_TOPICS="my-topic"
+    export MESSAGE_FORMAT="JSON"
+    ```
+  </Step>
+  <Step title="Run the job">
+    ```bash
+    gcloud dataflow flex-template run "kafka-to-bigquery-$(date +'%Y%m%d-%H%M%S')" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location "gs://dataflow-templates-$REGION/latest/flex/Kafka_to_BigQuery" \
+      --parameters "outputTableSpec=$OUTPUT_TABLE_SPEC" \
+      --parameters "bootstrapServers=$BOOTSTRAP_SERVERS" \
+      --parameters "kafkaReadTopics=$KAFKA_READ_TOPICS" \
+      --parameters "messageFormat=$MESSAGE_FORMAT"
+    ```
+  </Step>
+</Steps>
+
+  </Tab>
+  <Tab title="Kafka to BigQuery Flex">
+
+<Steps>
+  <Step title="Set environment variables">
+    ```bash
+    export PROJECT="my-project"
+    export REGION="us-central1"
+    export READ_BOOTSTRAP_SERVER_AND_TOPIC="broker1:9092;my-topic"
+    export KAFKA_READ_AUTHENTICATION_MODE="SASL_PLAIN"
+    export MESSAGE_FORMAT="JSON"
+    export WRITE_MODE="SINGLE_TABLE_NAME"
+    export OUTPUT_TABLE_SPEC="my-project:my_dataset.my_table"
+    export KAFKA_READ_USERNAME_SECRET_ID="projects/my-project/secrets/kafka-username/versions/latest"
+    export KAFKA_READ_PASSWORD_SECRET_ID="projects/my-project/secrets/kafka-password/versions/latest"
+    ```
+  </Step>
+  <Step title="Run the job">
+    ```bash
+    gcloud dataflow flex-template run "kafka-to-bigquery-flex-$(date +'%Y%m%d-%H%M%S')" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location "gs://dataflow-templates-$REGION/latest/flex/Kafka_to_BigQuery_Flex" \
+      --parameters "readBootstrapServerAndTopic=$READ_BOOTSTRAP_SERVER_AND_TOPIC" \
+      --parameters "kafkaReadAuthenticationMode=$KAFKA_READ_AUTHENTICATION_MODE" \
+      --parameters "messageFormat=$MESSAGE_FORMAT" \
+      --parameters "writeMode=$WRITE_MODE" \
+      --parameters "outputTableSpec=$OUTPUT_TABLE_SPEC" \
+      --parameters "useBigQueryDLQ=false" \
+      --parameters "kafkaReadUsernameSecretId=$KAFKA_READ_USERNAME_SECRET_ID" \
+      --parameters "kafkaReadPasswordSecretId=$KAFKA_READ_PASSWORD_SECRET_ID"
+    ```
+  </Step>
+</Steps>
+
+  </Tab>
+</Tabs>
+
+## Authentication
+
+The Flex variant (`Kafka_to_BigQuery_Flex`) supports several Kafka authentication modes:
+
+<AccordionGroup>
+  <Accordion title="SASL/PLAIN">
+    Store your Kafka username and password in Secret Manager and provide the secret IDs via `kafkaReadUsernameSecretId` and `kafkaReadPasswordSecretId`.
+
+    ```bash
+    --parameters "kafkaReadAuthenticationMode=SASL_PLAIN" \
+    --parameters "kafkaReadUsernameSecretId=projects/PROJECT_ID/secrets/kafka-user/versions/latest" \
+    --parameters "kafkaReadPasswordSecretId=projects/PROJECT_ID/secrets/kafka-pass/versions/latest"
+    ```
+  </Accordion>
+  <Accordion title="SASL/SCRAM-512">
+    Use `kafkaReadSaslScramUsernameSecretId` and `kafkaReadSaslScramPasswordSecretId` for SCRAM credentials. Optionally provide a TrustStore via `kafkaReadSaslScramTruststoreLocation`.
+
+    ```bash
+    --parameters "kafkaReadAuthenticationMode=SASL_SCRAM_512" \
+    --parameters "kafkaReadSaslScramUsernameSecretId=projects/PROJECT_ID/secrets/scram-user/versions/latest" \
+    --parameters "kafkaReadSaslScramPasswordSecretId=projects/PROJECT_ID/secrets/scram-pass/versions/latest"
+    ```
+  </Accordion>
+  <Accordion title="TLS (mutual)">
+    Provide Cloud Storage paths to your KeyStore and TrustStore JKS files and their corresponding Secret Manager secret IDs.
+
+    ```bash
+    --parameters "kafkaReadAuthenticationMode=TLS" \
+    --parameters "kafkaReadKeystoreLocation=gs://my-bucket/keystore.jks" \
+    --parameters "kafkaReadKeystorePasswordSecretId=projects/PROJECT_ID/secrets/ks-pass/versions/latest" \
+    --parameters "kafkaReadTruststoreLocation=gs://my-bucket/truststore.jks" \
+    --parameters "kafkaReadTruststorePasswordSecretId=projects/PROJECT_ID/secrets/ts-pass/versions/latest"
+    ```
+  </Accordion>
+  <Accordion title="No authentication">
+    Set `kafkaReadAuthenticationMode=NONE` for unauthenticated clusters.
+  </Accordion>
+</AccordionGroup>
+
+## User-defined functions (UDFs)
+
+Both template variants support JavaScript UDFs for transforming messages before insertion. Store your `.js` file in Cloud Storage and reference it with `javascriptTextTransformGcsPath` and `javascriptTextTransformFunctionName`.
+
+## Notes
+
+- **Dead-letter table**: In the classic variant (`Kafka_to_BigQuery`), set `outputDeadletterTable` to capture messages with schema mismatches or malformed JSON. In the Flex variant, set `useBigQueryDLQ=true` and provide `outputDeadletterTable`.
+- **Offset commits**: The Flex variant can commit processed offsets back to Kafka using `enableCommitOffsets=true` and a `consumerGroupId`. This minimizes reprocessing on pipeline restarts.
+- **Dynamic tables**: `DYNAMIC_TABLE_NAMES` mode automatically routes messages to different BigQuery tables based on the Avro schema name. Requires Confluent Schema Registry and `AVRO_CONFLUENT_WIRE_FORMAT`.
+- **Storage Write API**: Enable `useStorageWriteApi=true` for higher throughput writes. Pair with `useStorageWriteApiAtLeastOnce=true` for relaxed delivery semantics, or leave `false` for exactly-once (requires setting `numStorageWriteApiStreams` and `storageWriteApiTriggeringFrequencySec`).

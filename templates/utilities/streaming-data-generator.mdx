@@ -1,0 +1,227 @@
+---
+title: "Streaming Data Generator"
+description: "Generate synthetic streaming data at a specified rate for load testing and pipeline development."
+---
+
+## Overview
+
+The Streaming Data Generator template is a Flex Template streaming pipeline that publishes synthetic messages at a configurable rate (queries per second). It is designed for benchmarking and testing streaming Dataflow pipelines without requiring a live data source.
+
+You provide a JSON schema that defines the shape of each generated message. The template instantiates records matching that schema and publishes them to a configurable output sink.
+
+### Output sinks
+
+| Sink | Description |
+|---|---|
+| Pub/Sub (`PUBSUB`) | Publishes messages to a Pub/Sub topic. Default sink. |
+| BigQuery (`BIGQUERY`) | Writes rows to a BigQuery table. |
+| Cloud Storage (`GCS`) | Writes files to a Cloud Storage bucket using windowed writes. |
+| Cloud Spanner (`SPANNER`) | Writes rows to a Cloud Spanner table. |
+| JDBC (`JDBC`) | Writes rows to a relational database via JDBC. |
+| Kafka (`KAFKA`) | Publishes messages to an Apache Kafka topic. |
+
+### Common use cases
+
+- **Load testing** — Verify pipeline scalability by generating traffic at a target QPS before connecting a real source.
+- **Pipeline development** — Test transformations, windowing, and sinks with predictable, schema-conforming synthetic data.
+- **Performance benchmarking** — Measure end-to-end latency and throughput of downstream consumers.
+
+## Parameters
+
+### Required parameters
+
+<ParamField path="qps" type="integer" required>
+  The number of messages to publish per second.
+</ParamField>
+
+### Optional parameters — Schema
+
+<ParamField path="schemaLocation" type="string">
+  Cloud Storage path to a JSON schema file that defines the structure of generated records. For example, `gs://your-bucket/schema.json`. Either `schemaLocation` or `schemaTemplate` must be provided.
+</ParamField>
+
+<ParamField path="schemaTemplate" type="string">
+  A pre-built schema template to use instead of a custom schema file. Currently supported value: `GAME_EVENT`.
+</ParamField>
+
+<ParamField path="outputType" type="string">
+  The encoding format for generated messages. One of `JSON`, `AVRO`, or `PARQUET`. Defaults to `JSON`.
+</ParamField>
+
+<ParamField path="avroSchemaLocation" type="string">
+  Cloud Storage path to an Avro schema file (`.avsc`). Required when `outputType` is `AVRO` or `PARQUET`. For example, `gs://your-bucket/schema.avsc`.
+</ParamField>
+
+### Optional parameters — Output control
+
+<ParamField path="sinkType" type="string">
+  The output destination. One of `PUBSUB`, `BIGQUERY`, `GCS`, `SPANNER`, `JDBC`, or `KAFKA`. Defaults to `PUBSUB`.
+</ParamField>
+
+<ParamField path="messagesLimit" type="integer">
+  Maximum number of messages to generate. Set to `0` for unlimited. Defaults to `0`.
+</ParamField>
+
+### Optional parameters — Pub/Sub sink
+
+<ParamField path="topic" type="string">
+  The Pub/Sub topic to publish messages to. Required when `sinkType` is `PUBSUB`. For example, `projects/your-project/topics/your-topic`.
+</ParamField>
+
+### Optional parameters — BigQuery sink
+
+<ParamField path="outputTableSpec" type="string">
+  The BigQuery destination table. Required when `sinkType` is `BIGQUERY`. For example, `your-project:your-dataset.your-table`.
+</ParamField>
+
+<ParamField path="writeDisposition" type="string">
+  BigQuery write disposition. One of `WRITE_APPEND`, `WRITE_EMPTY`, or `WRITE_TRUNCATE`. Defaults to `WRITE_APPEND`.
+</ParamField>
+
+<ParamField path="outputDeadletterTable" type="string">
+  A BigQuery table for messages that fail to write to the output table. Created automatically if it does not exist. For example, `your-project:your-dataset.deadletter-table`.
+</ParamField>
+
+### Optional parameters — Cloud Storage sink
+
+<ParamField path="outputDirectory" type="string">
+  The Cloud Storage output path. Required when `sinkType` is `GCS`. Must end with a slash. Supports DateTime format patterns for directory naming. For example, `gs://your-bucket/output/`.
+</ParamField>
+
+<ParamField path="windowDuration" type="string">
+  The duration of each windowed write to Cloud Storage. Supported formats: `Ns` (seconds), `Nm` (minutes), `Nh` (hours). Defaults to `1m`.
+</ParamField>
+
+<ParamField path="outputFilenamePrefix" type="string">
+  Prefix for output file names when writing to Cloud Storage. Defaults to `output-`.
+</ParamField>
+
+<ParamField path="numShards" type="integer">
+  Maximum number of output file shards when writing to Cloud Storage. Defaults to Dataflow's automatic selection.
+</ParamField>
+
+### Optional parameters — Cloud Spanner sink
+
+<ParamField path="projectId" type="string">
+  The Google Cloud project containing the target Spanner instance.
+</ParamField>
+
+<ParamField path="spannerInstanceName" type="string">
+  The Cloud Spanner instance name to write to.
+</ParamField>
+
+<ParamField path="spannerDatabaseName" type="string">
+  The Cloud Spanner database name to write to.
+</ParamField>
+
+<ParamField path="spannerTableName" type="string">
+  The Cloud Spanner table name to write rows into.
+</ParamField>
+
+<ParamField path="maxNumMutations" type="integer">
+  Maximum number of cell mutations per Spanner batch. Defaults to `5000`.
+</ParamField>
+
+<ParamField path="maxNumRows" type="integer">
+  Maximum number of row mutations per Spanner batch. Defaults to `1000`.
+</ParamField>
+
+<ParamField path="batchSizeBytes" type="integer">
+  Maximum bytes per Spanner batch mutation. Defaults to `1MB`.
+</ParamField>
+
+<ParamField path="commitDeadlineSeconds" type="integer">
+  Deadline in seconds for the Spanner Commit API call.
+</ParamField>
+
+### Optional parameters — JDBC sink
+
+<ParamField path="driverClassName" type="string">
+  The JDBC driver class name. For example, `com.mysql.jdbc.Driver`.
+</ParamField>
+
+<ParamField path="connectionUrl" type="string">
+  The JDBC connection URL. For example, `jdbc:mysql://some-host:3306/sampledb`.
+</ParamField>
+
+<ParamField path="username" type="string">
+  Username for the JDBC connection.
+</ParamField>
+
+<ParamField path="password" type="string">
+  Password for the JDBC connection.
+</ParamField>
+
+<ParamField path="connectionProperties" type="string">
+  Additional JDBC connection properties in the format `propertyName=value;propertyName=value`. For example, `unicode=true;characterEncoding=UTF-8`.
+</ParamField>
+
+<ParamField path="statement" type="string">
+  The SQL INSERT statement to execute for each generated row. For example, `INSERT INTO tableName (col1, col2) VALUES (?, ?)`.
+</ParamField>
+
+### Optional parameters — Kafka sink
+
+<ParamField path="bootstrapServer" type="string">
+  The Kafka bootstrap server address. For example, `localhost:9092`.
+</ParamField>
+
+<ParamField path="kafkaTopic" type="string">
+  The Kafka topic to publish messages to. For example, `my-topic`.
+</ParamField>
+
+## Running the template
+
+<Steps>
+  <Step title="Run with gcloud (Pub/Sub output)">
+    ```bash
+    export PROJECT="PROJECT_ID"
+    export REGION="us-central1"
+    export TEMPLATE_SPEC_GCSPATH="gs://dataflow-templates-${REGION}/latest/flex/Streaming_Data_Generator"
+
+    gcloud dataflow flex-template run "streaming-data-generator-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+      --parameters "qps=1000" \
+      --parameters "schemaLocation=gs://your-bucket/schema.json" \
+      --parameters "sinkType=PUBSUB" \
+      --parameters "topic=projects/$PROJECT/topics/your-topic"
+    ```
+  </Step>
+  <Step title="Run with gcloud (BigQuery output)">
+    ```bash
+    gcloud dataflow flex-template run "streaming-data-generator-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+      --parameters "qps=500" \
+      --parameters "schemaLocation=gs://your-bucket/schema.json" \
+      --parameters "sinkType=BIGQUERY" \
+      --parameters "outputTableSpec=$PROJECT:your_dataset.your_table" \
+      --parameters "writeDisposition=WRITE_APPEND"
+    ```
+  </Step>
+  <Step title="Run with gcloud (Cloud Storage output with windowing)">
+    ```bash
+    gcloud dataflow flex-template run "streaming-data-generator-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+      --parameters "qps=200" \
+      --parameters "schemaLocation=gs://your-bucket/schema.json" \
+      --parameters "sinkType=GCS" \
+      --parameters "outputDirectory=gs://your-bucket/output/" \
+      --parameters "windowDuration=5m" \
+      --parameters "outputFilenamePrefix=data-"
+    ```
+  </Step>
+</Steps>
+
+## Notes
+
+- **Schema definition** — You must provide either `schemaLocation` (a path to a custom JSON schema in Cloud Storage) or `schemaTemplate` (a built-in template name). The JSON schema controls what fields are generated and their types.
+- **Output type and Avro schema** — When `outputType` is `AVRO` or `PARQUET`, you must also supply `avroSchemaLocation` pointing to a `.avsc` file. When `outputType` is `JSON` (default), only `schemaLocation` is needed.
+- **QPS is approximate** — The `qps` parameter sets a target rate. Actual throughput depends on available worker capacity, sink write speed, and Dataflow autoscaling behavior.
+- **messagesLimit for bounded runs** — Setting `messagesLimit` to a nonzero value causes the pipeline to stop after generating that many messages, which is useful for finite load tests.
+- **Flex Template** — This template runs as a Flex Template. Use `gcloud dataflow flex-template run` with `--template-file-gcs-location`.

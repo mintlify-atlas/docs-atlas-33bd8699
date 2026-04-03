@@ -1,0 +1,101 @@
+---
+title: "Release process"
+description: "How Google-provided Templates are released and how to run your own release."
+---
+
+## Release cadence
+
+Templates are released on a **weekly, best-effort basis**. Each release updates the [Google-provided Templates](https://cloud.google.com/dataflow/docs/guides/templates/provided-templates) with the latest bug fixes and improvements merged into the `main` branch.
+
+<Info>
+You do not need to trigger a release to use your own changes. You can stage your changes at any time using the [staging workflow](/operations/staging-and-running) and run the staged template directly.
+</Info>
+
+## How releases work
+
+Releases are driven by the `templatesRelease` Maven profile, which stages all templates while running additional validations beyond those performed by `templatesStage`. The profile:
+
+1. Compiles and packages every template module.
+2. Pushes container images to Artifact Registry (Flex templates).
+3. Copies template specs to the release GCS bucket.
+4. Validates that every template spec is well-formed.
+
+## Running a full release
+
+To release all templates, run:
+
+```shell
+mvn clean verify -PtemplatesRelease \
+  -DprojectId="{projectId}" \
+  -DbucketName="{bucketName}" \
+  -DlibrariesBucketName="{bucketName}-libraries" \
+  -DstagePrefix="$(date +%Y_%m_%d)-00_RC00"
+```
+
+### Release parameters
+
+<ParamField path="-DprojectId" type="string" required>
+  The Google Cloud project ID that owns the release Artifact Registry and GCS bucket.
+</ParamField>
+
+<ParamField path="-DbucketName" type="string" required>
+  The Cloud Storage bucket where template specs are written.
+</ParamField>
+
+<ParamField path="-DlibrariesBucketName" type="string" required>
+  A separate bucket for shared library JARs. Conventionally named `{bucketName}-libraries`.
+</ParamField>
+
+<ParamField path="-DstagePrefix" type="string" required>
+  The path prefix for this release. The convention `$(date +%Y_%m_%d)-00_RC00` encodes the date and a release candidate number, making it easy to identify and roll back.
+</ParamField>
+
+## Running a partial release
+
+To release only a subset of Flex templates, add `-pl` with the module path:
+
+```shell
+mvn clean verify -PtemplatesRelease \
+  -DprojectId="{projectId}" \
+  -DbucketName="{bucketName}" \
+  -DlibrariesBucketName="{bucketName}-libraries" \
+  -DstagePrefix="$(date +%Y_%m_%d)-00_RC00" \
+  -pl v2/streaming-data-generator -am
+```
+
+<Note>
+Partial releases are useful when only a specific template has changed and you want to avoid rebuilding every module.
+</Note>
+
+## Staging your own changes before release
+
+If you want to test changes before they reach a formal release, use the staging workflow:
+
+```shell
+mvn clean package -PtemplatesStage \
+  -DskipTests \
+  -DprojectId="{projectId}" \
+  -DbucketName="{bucketName}" \
+  -DstagePrefix="images/$(date +%Y_%m_%d)_01" \
+  -DtemplateName="Cloud_PubSub_to_GCS_Text_Flex" \
+  -pl v2/googlecloud-to-googlecloud -am
+```
+
+See [Staging and running templates](/operations/staging-and-running) for full details and parameter reference.
+
+## PR labels for release notes
+
+Release notes are automatically generated from pull request labels. A repo maintainer must apply one of the following labels before a PR can pass all checks:
+
+| Label | Description |
+|---|---|
+| `addition` | Addition of new functionality to an existing template |
+| `bug-fix` | Fix for a bug or issue in existing code |
+| `ignore-for-release` | Changes that should not appear in release notes (e.g. documentation updates, internal refactoring) |
+| `improvement` | Enhancement to existing functionality or a performance improvement |
+| `new-template` | Addition of a new Dataflow template |
+| `package-upgrade` | Update to a dependency, library, or package version |
+
+<Warning>
+PRs without one of the labels above will fail the release notes label check. Request the appropriate label from a repo maintainer before asking for a final review.
+</Warning>

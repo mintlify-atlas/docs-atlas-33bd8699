@@ -1,0 +1,127 @@
+---
+title: "JDBC to BigQuery"
+description: "Copy data from a relational database to BigQuery using JDBC in a batch pipeline."
+---
+
+## Overview
+
+The JDBC to BigQuery template (Classic Template) is a batch pipeline that reads rows from a relational database via a JDBC connection and writes them into an existing BigQuery table. Any database with an available JDBC driver is supported.
+
+Common supported databases include:
+
+| Database | Driver Class | Example Connection URL |
+|---|---|---|
+| MySQL | `com.mysql.jdbc.Driver` | `jdbc:mysql://host:3306/dbname` |
+| PostgreSQL | `org.postgresql.Driver` | `jdbc:postgresql://host:5432/dbname` |
+| Microsoft SQL Server | `com.microsoft.sqlserver.jdbc.SQLServerDriver` | `jdbc:sqlserver://host:1433;DatabaseName=dbname` |
+| Oracle | `oracle.jdbc.driver.OracleDriver` | `jdbc:oracle:thin:@host:1521:sid` |
+
+Use this template to migrate relational database tables to BigQuery, or to periodically export query results for analytics.
+
+## Parameters
+
+### Required parameters
+
+<ParamField path="driverJars" type="string" required>
+  Comma-separated Cloud Storage paths to the JDBC driver JAR files. For example, `gs://your-bucket/mysql-connector-java-8.0.jar`.
+</ParamField>
+
+<ParamField path="driverClassName" type="string" required>
+  The fully-qualified JDBC driver class name. For example, `com.mysql.jdbc.Driver`.
+</ParamField>
+
+<ParamField path="connectionURL" type="string" required>
+  The JDBC connection URL. For example, `jdbc:mysql://some-host:3306/sampledb`. Can be Base64-encoded and encrypted with Cloud KMS when `KMSEncryptionKey` is set.
+</ParamField>
+
+<ParamField path="query" type="string" required>
+  The SQL query to execute against the source database to extract data. For example, `SELECT * FROM sampledb.sample_table`. If a Cloud Storage path is provided (e.g. `gs://...`), the query is read from that file.
+</ParamField>
+
+<ParamField path="outputTable" type="string" required>
+  The fully-qualified BigQuery destination table in the format `PROJECT:DATASET.TABLE`. The table schema must match the query result columns.
+</ParamField>
+
+<ParamField path="bigQueryLoadingTemporaryDirectory" type="string" required>
+  A Cloud Storage path for temporary files used during the BigQuery load stage. For example, `gs://your-bucket/temp_dir`.
+</ParamField>
+
+### Optional parameters
+
+<ParamField path="connectionProperties" type="string">
+  Additional JDBC connection properties in the format `propertyName=value;propertyName=value`. For example, `unicode=true;characterEncoding=UTF-8`.
+</ParamField>
+
+<ParamField path="username" type="string">
+  Database username. Can be passed as plaintext or as a Base64-encoded string encrypted with Cloud KMS.
+</ParamField>
+
+<ParamField path="password" type="string">
+  Database password. Can be passed as plaintext or as a Base64-encoded string encrypted with Cloud KMS.
+</ParamField>
+
+<ParamField path="KMSEncryptionKey" type="string">
+  A Cloud KMS key resource name. When provided, the `username`, `password`, and `connectionURL` values must all be Base64-encoded ciphertext encrypted with this key. For example, `projects/your-project/locations/global/keyRings/your-keyring/cryptoKeys/your-key`.
+</ParamField>
+
+<ParamField path="useColumnAlias" type="boolean">
+  When `true`, the pipeline uses column aliases (defined with `AS` in the SQL query) instead of column names to map result columns to BigQuery fields. Defaults to `false`.
+</ParamField>
+
+<ParamField path="disabledAlgorithms" type="string">
+  Comma-separated list of cryptographic algorithms to disable in the JVM. Use with caution. For example, `SSLv3,RC4`. Set to `none` to disable no algorithms.
+</ParamField>
+
+<ParamField path="extraFilesToStage" type="string">
+  Comma-separated list of Cloud Storage paths or Secret Manager secret versions to stage on each worker under `/extra_files`. For example, `gs://your-bucket/file.txt,projects/PROJECT_ID/secrets/SECRET_ID/versions/VERSION_ID`.
+</ParamField>
+
+## Running the template
+
+<Steps>
+  <Step title="Run with gcloud">
+    ```bash
+    export PROJECT="PROJECT_ID"
+    export REGION="us-central1"
+    export TEMPLATE_SPEC_GCSPATH="gs://dataflow-templates-${REGION}/latest/Jdbc_to_BigQuery"
+
+    gcloud dataflow jobs run "jdbc-to-bigquery-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+      --parameters "driverJars=gs://your-bucket/mysql-connector-java-8.0.jar" \
+      --parameters "driverClassName=com.mysql.jdbc.Driver" \
+      --parameters "connectionURL=jdbc:mysql://your-host:3306/your_db" \
+      --parameters "username=your_user" \
+      --parameters "password=your_password" \
+      --parameters "query=SELECT * FROM your_table" \
+      --parameters "outputTable=your-project:your_dataset.your_table" \
+      --parameters "bigQueryLoadingTemporaryDirectory=gs://your-bucket/temp"
+    ```
+  </Step>
+  <Step title="Run with KMS-encrypted credentials">
+    ```bash
+    gcloud dataflow jobs run "jdbc-to-bigquery-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+      --parameters "driverJars=gs://your-bucket/driver.jar" \
+      --parameters "driverClassName=com.mysql.jdbc.Driver" \
+      --parameters "connectionURL=BASE64_ENCRYPTED_URL" \
+      --parameters "username=BASE64_ENCRYPTED_USER" \
+      --parameters "password=BASE64_ENCRYPTED_PASS" \
+      --parameters "KMSEncryptionKey=projects/PROJECT/locations/global/keyRings/RING/cryptoKeys/KEY" \
+      --parameters "query=SELECT * FROM your_table" \
+      --parameters "outputTable=your-project:your_dataset.your_table" \
+      --parameters "bigQueryLoadingTemporaryDirectory=gs://your-bucket/temp"
+    ```
+  </Step>
+</Steps>
+
+## Notes
+
+- **Driver JARs** — JDBC driver JARs are not bundled with the template. You must upload the appropriate driver JAR(s) to Cloud Storage and provide their paths via `driverJars`. Download drivers from the database vendor's official distribution site.
+- **Connection URL format** — The format varies by database. Refer to the table in the Overview section for examples. The connection URL may include the database name, port, SSL options, and other vendor-specific parameters.
+- **KMS encryption** — When `KMSEncryptionKey` is provided, all three of `connectionURL`, `username`, and `password` must be encrypted. Encrypting only some of them will cause the pipeline to fail. Use the [Cloud KMS encrypt endpoint](https://cloud.google.com/kms/docs/reference/rest/v1/projects.locations.keyRings.cryptoKeys/encrypt) to produce the ciphertext.
+- **Table schema** — The BigQuery destination table must exist before running the pipeline. The table schema must be compatible with the SQL query result columns.
+- **Classic Template** — This template runs as a Classic Template. Use `gcloud dataflow jobs run` with `--gcs-location`.

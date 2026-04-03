@@ -1,0 +1,180 @@
+---
+title: "Streaming Templates"
+description: "Overview of continuous data processing templates for real-time pipelines on Google Cloud Dataflow."
+---
+
+Streaming templates run continuously, processing data as it arrives. They are built on Apache Beam's unbounded collection model and are well-suited for event-driven architectures, change data capture, and real-time analytics.
+
+## When to use streaming templates
+
+<CardGroup cols={2}>
+  <Card title="Continuous ingestion" icon="arrow-right-arrow-left">
+    Data arrives in real time from message queues, change streams, or IoT devices and must be processed with low latency.
+  </Card>
+  <Card title="CDC pipelines" icon="database">
+    Capture database changes from Spanner, Bigtable, or Datastream and propagate them to analytical stores.
+  </Card>
+  <Card title="Event enrichment" icon="sparkles">
+    Enrich or transform events on the fly before they land in BigQuery, Cloud Storage, or a third-party sink.
+  </Card>
+  <Card title="Always-on pipelines" icon="clock">
+    The pipeline must keep running indefinitely, automatically restarting on failure, without manual scheduling.
+  </Card>
+</CardGroup>
+
+<Note>
+  Use a **batch** template instead when your data is bounded (a file, a table snapshot, or a scheduled export) and you only need to process it once or on a fixed schedule.
+</Note>
+
+## Key capabilities
+
+<CardGroup cols={2}>
+  <Card title="Windowing" icon="window">
+    Group unbounded events into fixed, sliding, or session windows for aggregations and time-based analytics.
+  </Card>
+  <Card title="Exactly-once delivery" icon="shield-check">
+    The Pub/Sub to BigQuery and related templates use the BigQuery Storage Write API to guarantee exactly-once semantics.
+  </Card>
+  <Card title="Autoscaling" icon="chart-line">
+    Dataflow automatically scales workers up and down based on the backlog, keeping costs proportional to throughput.
+  </Card>
+  <Card title="Dead-letter queues" icon="inbox">
+    Malformed or unprocessable records are routed to a separate BigQuery table or Pub/Sub topic instead of stopping the pipeline.
+  </Card>
+</CardGroup>
+
+## Available streaming templates
+
+### Pub/Sub connectors
+
+| Template | Description |
+|---|---|
+| Pub/Sub Subscription to BigQuery | Reads JSON messages from a Pub/Sub subscription and writes them to BigQuery. Supports UDFs. |
+| Pub/Sub Topic to BigQuery | Reads from a Pub/Sub topic directly and writes to BigQuery. |
+| Pub/Sub Avro to BigQuery | Deserialises Avro-encoded Pub/Sub messages and loads them into BigQuery. |
+| Pub/Sub Proto to BigQuery | Deserialises Protocol Buffer-encoded Pub/Sub messages and loads them into BigQuery. |
+| Pub/Sub CDC to BigQuery | Applies CDC operations (insert / update / delete) from Pub/Sub messages to a BigQuery table. |
+| Pub/Sub to Cloud Storage (Text) | Writes Pub/Sub messages as text files in Cloud Storage, with configurable windowing. |
+| Pub/Sub to Avro Files on Cloud Storage | Serialises Pub/Sub messages as Avro files in Cloud Storage. |
+| Pub/Sub to Datadog | Forwards Pub/Sub messages to Datadog's HTTP Event Collector. |
+| Pub/Sub to Elasticsearch | Indexes Pub/Sub messages in Elasticsearch. Supports UDFs. |
+| Pub/Sub to JDBC | Writes Pub/Sub messages to any JDBC-compatible relational database. |
+| Pub/Sub to Kafka | Publishes Pub/Sub messages to an Apache Kafka topic. |
+| Pub/Sub to MongoDB | Inserts Pub/Sub messages as documents in MongoDB. |
+| Pub/Sub to Pub/Sub | Copies messages between Pub/Sub topics (fan-out or migration). |
+| Pub/Sub to Redis | Writes Pub/Sub messages to Redis. |
+| Pub/Sub to Splunk | Forwards Pub/Sub messages to Splunk's HEC endpoint. Supports UDFs. |
+| Pub/Sub to BigTable (YAML) | Streams Pub/Sub messages into Cloud Bigtable using a declarative YAML pipeline. |
+| Text Files on Cloud Storage to Pub/Sub | Reads text files from Cloud Storage and publishes each line as a Pub/Sub message. |
+| Pub/Sub to JMS | Forwards Pub/Sub messages to a JMS destination. |
+| JMS to Pub/Sub | Reads messages from a JMS source and publishes them to Pub/Sub. |
+
+### Apache Kafka connectors
+
+| Template | Description |
+|---|---|
+| Kafka to BigQuery | Reads from Kafka topics and writes to BigQuery. Supports Avro, JSON, and Protobuf. |
+| Kafka to BigQuery (YAML) | Declarative YAML variant of the Kafka to BigQuery template. |
+| Kafka to Cloud Storage | Writes Kafka messages to Cloud Storage as text or Avro files. |
+| Kafka to Iceberg (YAML) | Streams Kafka messages into Apache Iceberg tables. |
+
+### Change streams
+
+| Template | Description |
+|---|---|
+| Cloud Spanner change streams to BigQuery | Propagates Spanner change stream events to a BigQuery table. |
+| Cloud Spanner change streams to Cloud Storage | Archives Spanner change stream events to Cloud Storage. |
+| Cloud Spanner change streams to Pub/Sub | Publishes Spanner change stream events to Pub/Sub. |
+| Spanner Change Streams to Sink | Fan-out connector: routes Spanner change streams to BigQuery, Cloud Storage, or Pub/Sub. |
+| Cloud Bigtable change streams to BigQuery | Propagates Bigtable change stream events to BigQuery. |
+| Cloud Bigtable change streams to Cloud Storage | Archives Bigtable change stream mutations to Cloud Storage. |
+| Bigtable Change Streams to HBase Replicator | Replicates Bigtable changes to an HBase cluster. |
+| Bigtable Change Streams to Pub/Sub | Publishes Bigtable change stream events to Pub/Sub. |
+| Bigtable Change Streams to Vector Search | Writes Bigtable change stream events to Vertex AI Vector Search. |
+| Ordered change stream buffer to Source DB | Replays an ordered change stream buffer back to the source database (reverse replication). |
+
+### Datastream connectors
+
+| Template | Description |
+|---|---|
+| Datastream to BigQuery | Ingests CDC events from Datastream and applies them to BigQuery. |
+| Datastream to Cloud Spanner | Migrates Datastream CDC events into Cloud Spanner with schema mapping. |
+| Datastream to SQL | Applies Datastream CDC events to any JDBC-compatible SQL database. |
+
+### Other streaming sources
+
+| Template | Description |
+|---|---|
+| Azure Eventhub to Pub/Sub | Bridges Azure Event Hub messages into Google Cloud Pub/Sub. |
+| Kinesis to Pub/Sub | Reads from Amazon Kinesis Data Streams and publishes to Pub/Sub. |
+| MQTT to Pub/Sub | Subscribes to an MQTT broker and forwards messages to Pub/Sub. |
+| MongoDB (CDC) to BigQuery | Captures MongoDB change events and writes them to BigQuery. |
+| Cloud Storage Text to BigQuery (Stream) | Reads new text files arriving in a Cloud Storage path and loads them into BigQuery. |
+| Data Masking/Tokenization from Cloud Storage to BigQuery | Tokenizes PII in Cloud Storage files using Cloud DLP before writing to BigQuery. |
+| Synchronizing CDC data to BigQuery | Applies generic CDC records (from any source) to BigQuery. |
+
+### Utilities
+
+| Template | Description |
+|---|---|
+| Streaming Data Generator | Generates synthetic streaming data at a configurable rate — useful for load testing. |
+
+## Common patterns
+
+### CDC pipeline
+
+Change Data Capture pipelines read from a database change stream or Datastream source and continuously apply the changes to an analytical destination such as BigQuery:
+
+```
+Database → Datastream → Datastream to BigQuery template → BigQuery
+Spanner  → Change Streams → Spanner Change Streams to BigQuery → BigQuery
+```
+
+### Event streaming pipeline
+
+Messages published to Pub/Sub are transformed in-flight (optionally with a UDF) and written to a destination:
+
+```
+Application → Pub/Sub → Pub/Sub to BigQuery template → BigQuery analytics
+```
+
+### Cross-cloud ingestion
+
+Events originating outside Google Cloud are bridged into the ecosystem before being processed:
+
+```
+Azure Event Hub → Azure Eventhub to Pub/Sub → (any Pub/Sub template)
+Amazon Kinesis  → Kinesis to Pub/Sub         → (any Pub/Sub template)
+```
+
+## Quick start: Pub/Sub to BigQuery
+
+The following example launches the **Pub/Sub Subscription to BigQuery** template using the `gcloud` CLI.
+
+<Steps>
+  <Step title="Set environment variables">
+    ```bash
+    export PROJECT=my-project
+    export REGION=us-central1
+    export INPUT_SUBSCRIPTION=projects/$PROJECT/subscriptions/my-subscription
+    export OUTPUT_TABLE=$PROJECT:my_dataset.my_table
+    ```
+  </Step>
+  <Step title="Run the template">
+    ```bash
+    gcloud dataflow jobs run "pubsub-to-bigquery-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --gcs-location "gs://dataflow-templates-$REGION/latest/PubSub_Subscription_to_BigQuery" \
+      --parameters "outputTableSpec=$OUTPUT_TABLE" \
+      --parameters "inputSubscription=$INPUT_SUBSCRIPTION"
+    ```
+  </Step>
+  <Step title="Monitor the job">
+    Open the [Dataflow console](https://console.cloud.google.com/dataflow/jobs) and select the running job to view throughput, latency, and worker metrics.
+  </Step>
+</Steps>
+
+<Tip>
+  For low-latency use cases, enable the **Streaming Engine** (`--enable-streaming-engine`) to reduce per-element overhead and improve autoscaling responsiveness.
+</Tip>

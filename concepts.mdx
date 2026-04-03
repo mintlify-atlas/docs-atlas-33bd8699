@@ -1,0 +1,239 @@
+---
+title: "Core concepts"
+description: "Understand the building blocks of Google Cloud Dataflow Templates: template types, parameters, UDFs, and categories."
+---
+
+## What is Google Cloud Dataflow?
+
+[Google Cloud Dataflow](https://cloud.google.com/dataflow/docs/overview) is a fully managed streaming and batch data processing service. It runs pipelines written with [Apache Beam](https://beam.apache.org/) and automatically handles resource provisioning, scaling, and fault tolerance.
+
+Dataflow Templates extend this by packaging pre-built pipelines so that you can run common data movement and transformation tasks without writing code. You supply parameters — source, destination, configuration — and Dataflow executes the pipeline on managed infrastructure.
+
+## Template types
+
+Dataflow Templates come in four types. The type determines how a template is packaged, stored, and launched.
+
+<CardGroup cols={2}>
+  <Card title="Classic Templates (v1)" icon="file">
+    Packaged as serialized pipeline graphs stored in Cloud Storage. Parameters are validated at launch time. Simpler to run but limited in the parameter types they support. Located in the `v1/` directory of this repository.
+  </Card>
+  <Card title="Flex Templates (v2)" icon="cube">
+    Packaged as Docker containers stored in Artifact Registry. Parameters are validated dynamically when the job starts. Support richer parameter types and runtime validation. All new templates use this format. Located in the `v2/` directory.
+  </Card>
+  <Card title="YAML Templates" icon="file-code">
+    Declarative pipelines written using [Apache Beam YAML](https://beam.apache.org/documentation/sdks/yaml/) syntax. Define your pipeline as a YAML file without writing Java or Python code. Located in the `yaml/` directory.
+  </Card>
+  <Card title="Python Templates" icon="python">
+    Templates implemented in Python, typically used for ML and analytics workloads. Also packaged as Flex Templates (containers). Located in the `python/` directory.
+  </Card>
+</CardGroup>
+
+### Classic templates vs. flex templates
+
+<Tabs>
+  <Tab title="Classic Templates (v1)">
+    Classic templates serialize the Beam pipeline graph at staging time and store it in Cloud Storage. When you launch the job, Dataflow reads this graph and starts workers.
+
+    **Key characteristics:**
+    - Stored as a file at a GCS path (e.g., `gs://dataflow-templates-us-central1/latest/Cloud_PubSub_to_GCS_Text`)
+    - Launched with `gcloud dataflow jobs run --gcs-location`
+    - Parameters are simple strings; no dynamic validation at launch time
+    - Established templates unlikely to receive new features; use Flex Templates for new work
+
+    ```bash
+    gcloud dataflow jobs run "my-job" \
+      --gcs-location "gs://dataflow-templates-us-central1/latest/Cloud_PubSub_to_GCS_Text" \
+      --region us-central1 \
+      --parameters "inputTopic=projects/my-project/topics/my-topic" \
+      --parameters "outputDirectory=gs://my-bucket/output/"
+    ```
+  </Tab>
+  <Tab title="Flex Templates (v2)">
+    Flex templates containerize the pipeline code. Dataflow launches a container to parse parameters and construct the pipeline graph at runtime.
+
+    **Key characteristics:**
+    - Stored as a container image in Artifact Registry and a spec file in Cloud Storage
+    - Launched with `gcloud dataflow flex-template run --template-file-gcs-location`
+    - Support rich parameter types (enums, GCS paths, Pub/Sub topics with validation)
+    - Preferred format for all new templates
+
+    ```bash
+    gcloud dataflow flex-template run "my-flex-job" \
+      --template-file-gcs-location "gs://dataflow-templates-us-central1/latest/flex/Cloud_PubSub_to_GCS_Text_Flex" \
+      --region us-central1 \
+      --parameters "inputSubscription=projects/my-project/subscriptions/my-sub" \
+      --parameters "outputDirectory=gs://my-bucket/output/"
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  All new templates contributed to this repository must be Flex Templates located in the `v2/` directory. Classic templates in `v1/` are maintained for backwards compatibility but no new classic templates are accepted.
+</Note>
+
+## YAML templates
+
+YAML templates let you define a Dataflow pipeline in declarative YAML using [Apache Beam YAML](https://beam.apache.org/documentation/sdks/yaml/) syntax. You write a YAML file describing your sources, transforms, and sinks, then pass it to Dataflow — no Java or Python code required.
+
+```yaml
+pipeline:
+  transforms:
+    - type: ReadFromPubSub
+      name: ReadMessages
+      config:
+        topic: "projects/my-project/topics/my-topic"
+    - type: WriteToBigQuery
+      name: WriteToTable
+      input: ReadMessages
+      config:
+        table: "my-project:my_dataset.my_table"
+```
+
+You can pass the YAML inline or as a file stored in Cloud Storage:
+
+```bash
+gcloud dataflow yaml run my-yaml-job \
+  --yaml-pipeline-file=gs://my-bucket/pipeline.yaml \
+  --region=us-central1
+```
+
+<Tip>
+  YAML templates are a good choice when you want to combine existing Beam I/O connectors without writing custom code. They are especially useful for prototyping.
+</Tip>
+
+## Python templates
+
+Python templates are Flex Templates implemented in Python. They follow the same packaging model as Java Flex Templates (Docker containers) but use the Apache Beam Python SDK.
+
+Python templates in this repository are located in the `python/` directory and are suited for:
+
+- Machine learning inference pipelines
+- Analytics workloads that use Python libraries (NumPy, Pandas, etc.)
+- Streaming LLM inference
+
+Like all Flex Templates, they are launched with `gcloud dataflow flex-template run`.
+
+## Template parameters
+
+Every template declares parameters that configure the pipeline. Parameters fall into two categories.
+
+### Required parameters
+
+Required parameters must be supplied at job launch time. The job will fail if any required parameter is missing.
+
+<ParamField path="inputTopic" type="string" required>
+  The Pub/Sub topic to read from. Format: `projects/PROJECT_ID/topics/TOPIC_NAME`.
+</ParamField>
+
+<ParamField path="outputDirectory" type="string" required>
+  The Cloud Storage path prefix for output files. Must end with a slash. Example: `gs://my-bucket/output/`.
+</ParamField>
+
+### Optional parameters
+
+Optional parameters have default values. You only need to provide them when you want to override the default behavior.
+
+<ParamField path="outputFilenamePrefix" type="string" default="output">
+  The prefix added to each output file name.
+</ParamField>
+
+<ParamField path="outputFilenameSuffix" type="string" default="">
+  The suffix (typically a file extension) appended to each output file name.
+</ParamField>
+
+<ParamField path="outputShardTemplate" type="string" default="W-P-SS-of-NN">
+  Defines the dynamic portion of each windowed output file name. `W` is the window date range, `P` is the pane info, `S` is the shard number, and `N` is the number of shards.
+</ParamField>
+
+<Info>
+  Parameter names and types are defined in the template source code using `@TemplateParameter` annotations. These annotations also control how parameters appear in the Dataflow UI. See [Metadata annotations](/development/metadata-annotations) for details.
+</Info>
+
+## User-Defined Functions (UDFs)
+
+User-Defined Functions let you customize template behavior by supplying a short JavaScript function — without modifying the template source code. UDFs are available on select templates that support them.
+
+A UDF receives each pipeline element as a JSON string, transforms it, and returns the modified JSON string. If the function returns `undefined`, the element is filtered out.
+
+### Example: adding a field
+
+```javascript
+/**
+ * Adds metadata fields to each incoming record.
+ * @param {string} inJson
+ * @return {string} outJson
+ */
+function transform(inJson) {
+  var obj = JSON.parse(inJson);
+  obj.dataFeed = "Real-time Transactions";
+  obj.dataSource = "POS";
+  return JSON.stringify(obj);
+}
+```
+
+### Example: filtering records
+
+```javascript
+/**
+ * Filters out records where answerToLife is not 42.
+ * @param {string} inJson
+ * @return {string} outJson
+ */
+function transform(inJson) {
+  var obj = JSON.parse(inJson);
+  if (obj.hasOwnProperty('answerToLife') && obj.answerToLife === 42) {
+    return JSON.stringify(obj);
+  }
+  // returning undefined filters the record from output
+}
+```
+
+<Warning>
+  A UDF that returns `undefined` (or no value) causes the element to be dropped from the pipeline output. This is intentional for filtering, but can cause data loss if the function has a bug.
+</Warning>
+
+UDFs are passed to templates as parameters referencing a JavaScript file in Cloud Storage:
+
+```bash
+--parameters "javascriptTextTransformGcsPath=gs://my-bucket/udf/transform.js" \
+--parameters "javascriptTextTransformFunctionName=transform"
+```
+
+Additional UDF examples are available in the repository under [`v2/common/src/main/resources/udf-samples`](https://github.com/GoogleCloudPlatform/DataflowTemplates/tree/main/v2/common/src/main/resources/udf-samples).
+
+## Template categories
+
+Templates in this repository are organized into categories based on the type of workload they handle.
+
+<CardGroup cols={3}>
+  <Card title="Streaming" icon="signal-stream" href="/guides/streaming-templates">
+    Continuously running pipelines that process data as it arrives. Sources include Pub/Sub, Kafka, Datastream, Bigtable change streams, and Spanner change streams. Sinks include BigQuery, Cloud Storage, and Elasticsearch.
+  </Card>
+  <Card title="Batch" icon="layer-group" href="/guides/batch-templates">
+    One-time or scheduled pipelines that process a bounded dataset. Common use cases: exporting BigQuery tables, migrating data between databases, and bulk loading Cloud Spanner or Bigtable.
+  </Card>
+  <Card title="Utilities" icon="wrench" href="/templates/utilities/file-format-conversion">
+    General-purpose pipelines for file operations and data generation. Includes bulk compress/decompress, file format conversion (Avro, Parquet, CSV), and a streaming data generator for testing.
+  </Card>
+</CardGroup>
+
+## The Templates Maven plugin
+
+The Templates Maven plugin (`plugins/templates-maven-plugin`) is the primary tool for working with templates in this repository. It provides Maven lifecycle profiles that handle the full template workflow.
+
+| Profile | Purpose |
+|---|---|
+| `templatesValidate` | Run code quality checks on a template |
+| `templatesStage` | Build and stage a template to Cloud Storage (and Artifact Registry for Flex templates) |
+| `templatesRun` | Stage and immediately run a template on Dataflow |
+| `templatesSpec` | Generate parameter documentation for templates |
+| `templatesTerraform` | Generate Terraform modules for templates |
+| `templatesIntegrationTests` | Run integration tests against a staged template |
+
+Install the plugin into your local Maven repository before using it:
+
+```bash
+mvn clean install -pl plugins/templates-maven-plugin -am
+```
+
+See [Development setup](/development/setup) for full instructions on using the plugin.

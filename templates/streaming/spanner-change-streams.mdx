@@ -1,0 +1,337 @@
+---
+title: "Spanner change streams"
+description: "Stream Cloud Spanner change stream records to BigQuery, Cloud Storage, or Pub/Sub using Dataflow flex templates."
+---
+
+## Overview
+
+The Cloud Spanner change streams templates are streaming pipelines that read data change records from a Cloud Spanner change stream and write them to a configurable sink. Three sink variants are available, each as a separate Dataflow flex template:
+
+<CardGroup cols={3}>
+  <Card title="BigQuery" icon="table">
+    Streams change records into BigQuery changelog tables with periodic upserts.
+  </Card>
+  <Card title="Cloud Storage" icon="hard-drive">
+    Streams change records into windowed files in Cloud Storage in JSON or AVRO format.
+  </Card>
+  <Card title="Pub/Sub" icon="radio">
+    Streams change records as messages to a Pub/Sub topic in JSON or AVRO format.
+  </Card>
+</CardGroup>
+
+All three templates use the Spanner change stream connector, which requires a dedicated metadata database to track partition state.
+
+## Common required parameters
+
+These parameters are required for all three sink variants.
+
+<ParamField path="spannerInstanceId" type="string" required>
+  The Spanner instance to read change streams from.
+</ParamField>
+
+<ParamField path="spannerDatabase" type="string" required>
+  The Spanner database to read change streams from.
+</ParamField>
+
+<ParamField path="spannerMetadataInstanceId" type="string" required>
+  The Spanner instance to use for the change streams connector metadata table.
+</ParamField>
+
+<ParamField path="spannerMetadataDatabase" type="string" required>
+  The Spanner database to use for the change streams connector metadata table.
+</ParamField>
+
+<ParamField path="spannerChangeStreamName" type="string" required>
+  The name of the Spanner change stream to read from.
+</ParamField>
+
+## Common optional parameters
+
+<ParamField path="spannerProjectId" type="string">
+  The project that contains the Spanner database and where the metadata table is created. Default: the Dataflow job project.
+</ParamField>
+
+<ParamField path="spannerDatabaseRole" type="string">
+  The Spanner database role to use when running the template. Required only for fine-grained access control users. The role must have `SELECT` on the change stream and `EXECUTE` on its read function.
+</ParamField>
+
+<ParamField path="spannerMetadataTableName" type="string">
+  The name of the metadata table. If not provided, a table is created automatically. You must provide this value when updating an existing pipeline to avoid creating a new metadata table.
+</ParamField>
+
+<ParamField path="startTimestamp" type="string">
+  The starting RFC 3339 DateTime (inclusive) from which to read change events. For example, `2024-01-01T00:00:00.00Z`. Default: the pipeline start time.
+</ParamField>
+
+<ParamField path="endTimestamp" type="string">
+  The ending RFC 3339 DateTime (inclusive) for reading change events. Default: indefinite (pipeline runs continuously).
+</ParamField>
+
+<ParamField path="rpcPriority" type="string">
+  The Spanner RPC request priority. Accepted values: `HIGH`, `MEDIUM`, `LOW`. Default: `HIGH`.
+</ParamField>
+
+## Sink-specific parameters
+
+<Tabs>
+  <Tab title="BigQuery">
+
+### BigQuery sink
+
+**Template name**: `Spanner_Change_Streams_to_BigQuery`
+
+#### Required
+
+<ParamField path="bigQueryDataset" type="string" required>
+  The BigQuery dataset for change stream output tables.
+</ParamField>
+
+#### Optional
+
+<ParamField path="bigQueryProjectId" type="string">
+  The BigQuery project. Default: the Dataflow job project.
+</ParamField>
+
+<ParamField path="bigQueryChangelogTableNameTemplate" type="string">
+  Template for the BigQuery changelog table name. Default: `{_metadata_spanner_table_name}_changelog`.
+</ParamField>
+
+<ParamField path="deadLetterQueueDirectory" type="string">
+  Cloud Storage path for unprocessed records. Default: a subdirectory under the Dataflow temp location.
+</ParamField>
+
+<ParamField path="dlqRetryMinutes" type="number">
+  Minutes between dead-letter queue retries. Default: `10`.
+</ParamField>
+
+<ParamField path="ignoreFields" type="string">
+  Comma-separated list of fields (case-sensitive) to exclude from BigQuery inserts. Can include watched table columns or pipeline metadata fields.
+</ParamField>
+
+<ParamField path="disableDlqRetries" type="boolean">
+  If `true`, disables automatic dead-letter queue retries. Default: `false`.
+</ParamField>
+
+<ParamField path="useStorageWriteApi" type="boolean">
+  If `true`, uses the BigQuery Storage Write API. Default: `false`.
+</ParamField>
+
+<ParamField path="useStorageWriteApiAtLeastOnce" type="boolean">
+  When using the Storage Write API, use at-least-once semantics. Default: `false`.
+</ParamField>
+
+<ParamField path="numStorageWriteApiStreams" type="number">
+  Number of Storage Write API write streams. Required when `useStorageWriteApi` is `true` and `useStorageWriteApiAtLeastOnce` is `false`. Default: `0`.
+</ParamField>
+
+<ParamField path="storageWriteApiTriggeringFrequencySec" type="number">
+  Triggering frequency in seconds for Storage Write API. Required when `useStorageWriteApi` is `true` and `useStorageWriteApiAtLeastOnce` is `false`.
+</ParamField>
+
+#### Metadata fields added to BigQuery
+
+Each BigQuery row includes the following metadata columns:
+
+| Field | Description |
+|---|---|
+| `_metadata_spanner_mod_type` | Modification type: `INSERT`, `UPDATE`, or `DELETE` |
+| `_metadata_spanner_table_name` | The Spanner source table name |
+| `_metadata_spanner_commit_timestamp` | The Spanner commit timestamp |
+| `_metadata_spanner_server_transaction_id` | Globally unique transaction identifier |
+| `_metadata_spanner_record_sequence` | Sequence number within the transaction |
+| `_metadata_spanner_is_last_record_in_transaction_in_partition` | Whether this is the last record for the transaction in the current partition |
+| `_metadata_spanner_number_of_records_in_transaction` | Total records in the transaction across all partitions |
+| `_metadata_spanner_number_of_partitions_in_transaction` | Number of partitions returning records for the transaction |
+| `_metadata_big_query_commit_timestamp` | The commit timestamp of the BigQuery insert |
+
+  </Tab>
+  <Tab title="Cloud Storage">
+
+### Cloud Storage sink
+
+**Template name**: `Spanner_Change_Streams_to_Google_Cloud_Storage`
+
+#### Required
+
+<ParamField path="gcsOutputDirectory" type="string" required>
+  The Cloud Storage path prefix for output files. Must end with `/`. Supports DateTime format tokens for path templating. For example, `gs://my-bucket/output/`.
+</ParamField>
+
+#### Optional
+
+<ParamField path="outputFileFormat" type="string">
+  The output file format. Accepted values: `TEXT`, `AVRO`. Default: `AVRO`.
+</ParamField>
+
+<ParamField path="windowDuration" type="string">
+  The window size for grouping records into output files. Supported formats: `Ns` (seconds), `Nm` (minutes), `Nh` (hours). Minimum `1s`. Default: `5m`.
+</ParamField>
+
+<ParamField path="numShards" type="number">
+  The maximum number of output shards per window. A higher shard count increases write throughput but may increase downstream aggregation cost. Default: `20`.
+</ParamField>
+
+<ParamField path="outputFilenamePrefix" type="string">
+  The prefix for each output file name. Default: `output`.
+</ParamField>
+
+<ParamField path="spannerHost" type="string">
+  The Cloud Spanner endpoint. For example, `https://spanner.googleapis.com`. Default: `https://spanner.googleapis.com`.
+</ParamField>
+
+  </Tab>
+  <Tab title="Pub/Sub">
+
+### Pub/Sub sink
+
+**Template name**: `Spanner_Change_Streams_to_PubSub`
+
+#### Required
+
+<ParamField path="pubsubTopic" type="string" required>
+  The Pub/Sub topic for change stream output, in the format `projects/PROJECT_ID/topics/TOPIC_NAME`. The topic must exist before starting the pipeline.
+</ParamField>
+
+#### Optional
+
+<ParamField path="outputDataFormat" type="string">
+  The output message format. Accepted values: `JSON`, `AVRO`. Default: `JSON`.
+</ParamField>
+
+<ParamField path="pubsubAPI" type="string">
+  The Pub/Sub API implementation. Accepted values: `pubsubio`, `native_client`. Use `native_client` for low QPS with lower latency; use `pubsubio` for high QPS with stable throughput. Default: `pubsubio`.
+</ParamField>
+
+<ParamField path="pubsubProjectId" type="string">
+  The project containing the Pub/Sub topic. Default: the Dataflow job project.
+</ParamField>
+
+<ParamField path="includeSpannerSource" type="boolean">
+  Whether to include the Spanner database ID and instance ID in each output message. Default: `false`.
+</ParamField>
+
+<ParamField path="outputMessageMetadata" type="string">
+  A custom string value for the `outputMessageMetadata` field in each Pub/Sub message. Field is omitted when empty. Escape special characters as needed.
+</ParamField>
+
+<ParamField path="spannerHost" type="string">
+  The Cloud Spanner endpoint. Default: `https://spanner.googleapis.com`.
+</ParamField>
+
+  </Tab>
+</Tabs>
+
+## Running the template
+
+<Tabs>
+  <Tab title="BigQuery">
+
+<Steps>
+  <Step title="Set environment variables">
+    ```bash
+    export PROJECT="my-project"
+    export REGION="us-central1"
+    export SPANNER_INSTANCE_ID="my-spanner-instance"
+    export SPANNER_DATABASE="my-database"
+    export SPANNER_METADATA_INSTANCE_ID="my-spanner-instance"
+    export SPANNER_METADATA_DATABASE="my-metadata-db"
+    export SPANNER_CHANGE_STREAM_NAME="my-change-stream"
+    export BIG_QUERY_DATASET="my_bq_dataset"
+    ```
+  </Step>
+  <Step title="Run the job">
+    ```bash
+    gcloud dataflow flex-template run "spanner-change-streams-to-bq-$(date +'%Y%m%d-%H%M%S')" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location "gs://dataflow-templates-$REGION/latest/flex/Spanner_Change_Streams_to_BigQuery" \
+      --parameters "spannerInstanceId=$SPANNER_INSTANCE_ID" \
+      --parameters "spannerDatabase=$SPANNER_DATABASE" \
+      --parameters "spannerMetadataInstanceId=$SPANNER_METADATA_INSTANCE_ID" \
+      --parameters "spannerMetadataDatabase=$SPANNER_METADATA_DATABASE" \
+      --parameters "spannerChangeStreamName=$SPANNER_CHANGE_STREAM_NAME" \
+      --parameters "bigQueryDataset=$BIG_QUERY_DATASET"
+    ```
+  </Step>
+</Steps>
+
+  </Tab>
+  <Tab title="Cloud Storage">
+
+<Steps>
+  <Step title="Set environment variables">
+    ```bash
+    export PROJECT="my-project"
+    export REGION="us-central1"
+    export SPANNER_INSTANCE_ID="my-spanner-instance"
+    export SPANNER_DATABASE="my-database"
+    export SPANNER_METADATA_INSTANCE_ID="my-spanner-instance"
+    export SPANNER_METADATA_DATABASE="my-metadata-db"
+    export SPANNER_CHANGE_STREAM_NAME="my-change-stream"
+    export GCS_OUTPUT_DIRECTORY="gs://my-bucket/change-stream-output/"
+    ```
+  </Step>
+  <Step title="Run the job">
+    ```bash
+    gcloud dataflow flex-template run "spanner-change-streams-to-gcs-$(date +'%Y%m%d-%H%M%S')" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location "gs://dataflow-templates-$REGION/latest/flex/Spanner_Change_Streams_to_Google_Cloud_Storage" \
+      --parameters "spannerInstanceId=$SPANNER_INSTANCE_ID" \
+      --parameters "spannerDatabase=$SPANNER_DATABASE" \
+      --parameters "spannerMetadataInstanceId=$SPANNER_METADATA_INSTANCE_ID" \
+      --parameters "spannerMetadataDatabase=$SPANNER_METADATA_DATABASE" \
+      --parameters "spannerChangeStreamName=$SPANNER_CHANGE_STREAM_NAME" \
+      --parameters "gcsOutputDirectory=$GCS_OUTPUT_DIRECTORY" \
+      --parameters "outputFileFormat=AVRO" \
+      --parameters "windowDuration=5m"
+    ```
+  </Step>
+</Steps>
+
+  </Tab>
+  <Tab title="Pub/Sub">
+
+<Steps>
+  <Step title="Set environment variables">
+    ```bash
+    export PROJECT="my-project"
+    export REGION="us-central1"
+    export SPANNER_INSTANCE_ID="my-spanner-instance"
+    export SPANNER_DATABASE="my-database"
+    export SPANNER_METADATA_INSTANCE_ID="my-spanner-instance"
+    export SPANNER_METADATA_DATABASE="my-metadata-db"
+    export SPANNER_CHANGE_STREAM_NAME="my-change-stream"
+    export PUBSUB_TOPIC="projects/my-project/topics/my-change-stream-topic"
+    ```
+  </Step>
+  <Step title="Run the job">
+    ```bash
+    gcloud dataflow flex-template run "spanner-change-streams-to-pubsub-$(date +'%Y%m%d-%H%M%S')" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location "gs://dataflow-templates-$REGION/latest/flex/Spanner_Change_Streams_to_PubSub" \
+      --parameters "spannerInstanceId=$SPANNER_INSTANCE_ID" \
+      --parameters "spannerDatabase=$SPANNER_DATABASE" \
+      --parameters "spannerMetadataInstanceId=$SPANNER_METADATA_INSTANCE_ID" \
+      --parameters "spannerMetadataDatabase=$SPANNER_METADATA_DATABASE" \
+      --parameters "spannerChangeStreamName=$SPANNER_CHANGE_STREAM_NAME" \
+      --parameters "pubsubTopic=$PUBSUB_TOPIC" \
+      --parameters "outputDataFormat=JSON"
+    ```
+  </Step>
+</Steps>
+
+  </Tab>
+</Tabs>
+
+## Notes
+
+- **Ordering**: BigQuery rows are inserted out of order relative to the original Spanner commit timestamp ordering. The `_metadata_spanner_commit_timestamp` field on each row can be used to reconstruct ordering if needed.
+- **Delivery semantics**: All three templates provide at-least-once delivery. Records past the Dataflow watermark are either written to the sink or routed to the dead-letter queue for retry. Duplicate records are possible.
+- **Metadata database**: The change stream connector uses a Spanner metadata database to track partition state. The metadata database can be the same instance and database as the source, or a separate one. Provide `spannerMetadataTableName` when updating an existing pipeline to avoid starting a new metadata tracking session.
+- **Schema changes**: Schema changes in the source Spanner tables are not propagated to BigQuery automatically. Breaking schema changes may require recreating the pipeline.
+- **Stale reads**: For `OLD_AND_NEW_VALUES` and `NEW_VALUES` value capture types, the template performs stale reads at the change record's commit timestamp to retrieve unchanged watched columns. Configure the database `version_retention_period` to cover the expected pipeline latency.
+- **Region colocation**: Run the Dataflow job in the same region as your Spanner instance and target sink to minimize network latency and cross-region data transfer costs.
+- **Pub/Sub topic**: The target Pub/Sub topic must exist before starting the pipeline. If the topic does not exist, the pipeline will fail to connect and get stuck in a retry loop.
+- **Cloud Storage windowing**: The Cloud Storage sink groups records into time windows. All records within a window are guaranteed to appear in the corresponding output file — there are no late arrivals to a closed window.

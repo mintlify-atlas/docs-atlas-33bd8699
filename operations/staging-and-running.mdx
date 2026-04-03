@@ -1,0 +1,221 @@
+---
+title: "Staging and running templates"
+description: "Upload a template to GCP and run it on Dataflow using Maven or the gcloud CLI."
+---
+
+"Staging" a template means packaging the template artifact and uploading it to Google Cloud Storage, along with pushing the container image to Artifact Registry (for Flex templates). Once staged, the template can be run on Dataflow by anyone with access to the GCS bucket.
+
+## Prerequisites
+
+Before staging or running a template, make sure you have the following in place:
+
+<CardGroup cols={2}>
+  <Card title="gcloud CLI" icon="terminal">
+    Install and authenticate the [gcloud CLI](https://cloud.google.com/sdk/docs/install). Run `gcloud init` and `gcloud auth application-default login`.
+  </Card>
+  <Card title="Artifact Registry" icon="box">
+    A repository in Artifact Registry to host the container image (Flex templates only). The registry must be in the same project you are staging to.
+  </Card>
+  <Card title="GCS bucket" icon="database">
+    A Cloud Storage bucket where the template spec and staging artifacts will be written.
+  </Card>
+  <Card title="Java 17 and Maven 3" icon="code">
+    The build toolchain required to compile and package templates locally.
+  </Card>
+</CardGroup>
+
+Authenticate before running any Maven staging or release commands:
+
+```shell
+gcloud init
+gcloud auth application-default login
+```
+
+## Installing the Templates Maven plugin
+
+The Templates Maven plugin automates the validate, stage, and run workflows. Install it into your local Maven repository once before using it:
+
+```shell
+mvn clean install -pl plugins/templates-maven-plugin -am
+```
+
+<Warning>
+After any changes to the plugin source, re-run the install command above. Maven may cache a stale version and silently ignore updates.
+</Warning>
+
+## Validating a template
+
+Run the `templatesValidate` profile to check code quality before staging:
+
+```shell
+mvn clean install -PtemplatesValidate -DskipTests -pl <module> -am
+```
+
+Replace `<module>` with the Maven module path for your template, for example `-pl v2/googlecloud-to-googlecloud`.
+
+## Staging a template
+
+Use the `templatesStage` profile to upload the template spec and (for Flex templates) the container image:
+
+```shell
+mvn clean package -PtemplatesStage \
+  -DskipTests \
+  -DprojectId="{projectId}" \
+  -DbucketName="{bucketName}" \
+  -DstagePrefix="images/$(date +%Y_%m_%d)_01" \
+  -DtemplateName="Cloud_PubSub_to_GCS_Text_Flex" \
+  -pl v2/googlecloud-to-googlecloud -am
+```
+
+### Staging parameters
+
+<ParamField path="-DprojectId" type="string" required>
+  The Google Cloud project ID to stage the template to. Billing must be enabled on this project.
+</ParamField>
+
+<ParamField path="-DbucketName" type="string" required>
+  The Cloud Storage bucket name (without `gs://`) where the template spec will be written.
+</ParamField>
+
+<ParamField path="-DstagePrefix" type="string" required>
+  The path prefix inside the bucket. Using a date-based prefix (e.g. `images/$(date +%Y_%m_%d)_01`) keeps staged artifacts organized by date.
+</ParamField>
+
+<ParamField path="-DtemplateName" type="string">
+  The name of a single template to stage. When omitted, all templates in the specified module are staged.
+</ParamField>
+
+<ParamField path="-pl" type="string">
+  The Maven module path (e.g. `v2/googlecloud-to-googlecloud`). Not required, but dramatically reduces build time by scoping the build to a single module.
+</ParamField>
+
+<Tip>
+After staging, the full GCS path to the template spec is printed to the console. Note this path — you will need it to run the template or pass it as `-DspecPath`.
+</Tip>
+
+## Running a staged template via gcloud
+
+Once a template is staged, run it with the `gcloud dataflow flex-template run` command:
+
+```shell
+gcloud dataflow flex-template run "my-job" \
+  --template-file-gcs-location="gs://{bucketName}/{stagePrefix}/flex/{templateName}" \
+  --region="us-central1" \
+  --parameters inputTopic="projects/{projectId}/topics/{topicName}" \
+  --parameters windowDuration="15s" \
+  --parameters outputDirectory="gs://{outputBucket}/out" \
+  --parameters outputFilenamePrefix="output-" \
+  --parameters outputFilenameSuffix=".txt"
+```
+
+For classic (non-Flex) templates, use `gcloud dataflow jobs run` instead. See the [gcloud documentation](https://cloud.google.com/dataflow/docs/guides/templates/running-templates#using-gcloud) for full details.
+
+## Running a template directly from Maven
+
+The `templatesRun` profile stages and launches the template in a single command — no separate staging step is needed.
+
+```shell
+mvn clean package -PtemplatesRun \
+  -DskipTests \
+  -DprojectId="{projectId}" \
+  -DbucketName="{bucketName}" \
+  -Dregion="us-central1" \
+  -DtemplateName="Cloud_PubSub_to_GCS_Text_Flex" \
+  -Dparameters="inputTopic=projects/{projectId}/topics/{topicName},windowDuration=15s,outputDirectory=gs://{outputDirectory}/out,outputFilenamePrefix=output-,outputFilenameSuffix=.txt" \
+  -pl v2/googlecloud-to-googlecloud -am
+```
+
+### Run parameters
+
+<ParamField path="-DprojectId" type="string" required>
+  The Google Cloud project ID to run the Dataflow job in.
+</ParamField>
+
+<ParamField path="-DbucketName" type="string" required>
+  The Cloud Storage bucket used for staging artifacts and job temp files.
+</ParamField>
+
+<ParamField path="-Dregion" type="string" required>
+  The Dataflow region for the job (e.g. `us-central1`).
+</ParamField>
+
+<ParamField path="-DtemplateName" type="string" required>
+  The name of the template to run. Required when using `-PtemplatesRun` because each template has different `-Dparameters`.
+</ParamField>
+
+<ParamField path="-Dparameters" type="string" required>
+  Comma-separated list of `key=value` pairs passed to the template pipeline. The set of valid keys depends on the template.
+</ParamField>
+
+<ParamField path="-DjobName" type="string">
+  An optional name for the Dataflow job. When omitted, a name is generated automatically.
+</ParamField>
+
+<ParamField path="-DspecPath" type="string">
+  Path to an already-staged template spec (e.g. `gs://my-bucket/images/2024_01_01_01/flex/Cloud_PubSub_to_GCS_Text_Flex`). When provided, the plugin skips staging and runs the existing spec directly.
+</ParamField>
+
+<ParamField path="-DskipShade" type="boolean">
+  Skips the Maven Shade plugin step (fat-jar creation). Use this if you encounter a `Template run failed: File too large` error.
+</ParamField>
+
+## Using an existing staged template path
+
+If you have already staged a template and want to reuse it without re-staging, pass the GCS path via `-DspecPath`:
+
+```shell
+mvn clean package -PtemplatesRun \
+  -DskipTests \
+  -DprojectId="{projectId}" \
+  -DbucketName="{bucketName}" \
+  -Dregion="us-central1" \
+  -DtemplateName="Cloud_PubSub_to_GCS_Text_Flex" \
+  -DspecPath="gs://{bucketName}/{stagePrefix}/flex/Cloud_PubSub_to_GCS_Text_Flex" \
+  -Dparameters="inputTopic=..." \
+  -pl v2/googlecloud-to-googlecloud -am
+```
+
+## Running via the Google Cloud Console
+
+You can also launch a custom template from the [Google Cloud Console](https://console.cloud.google.com/dataflow/createjob):
+
+<Steps>
+  <Step title="Open the Dataflow job creation page">
+    In the Cloud Console, navigate to **Dataflow > Create job from template**.
+  </Step>
+  <Step title="Select Custom Template">
+    In the **Dataflow template** dropdown, choose **Custom Template**.
+  </Step>
+  <Step title="Provide the template GCS path">
+    Enter the full GCS path to the staged template spec file, for example `gs://my-bucket/images/2024_01_01_01/flex/Cloud_PubSub_to_GCS_Text_Flex`.
+  </Step>
+  <Step title="Fill in the template parameters">
+    The UI will render the template's parameters automatically. Fill them in and click **Run job**.
+  </Step>
+</Steps>
+
+## Common errors and fixes
+
+<AccordionGroup>
+  <Accordion title="Template run failed: File too large">
+    The fat-jar produced by the Maven Shade plugin exceeds the Dataflow file size limit. Add `-DskipShade` to skip fat-jar creation:
+
+    ```shell
+    mvn clean package -PtemplatesRun -DskipShade ...
+    ```
+  </Accordion>
+  <Accordion title="Plugin changes not picked up">
+    Maven caches the plugin locally. Re-install it after any source changes:
+
+    ```shell
+    mvn clean install -pl plugins/templates-maven-plugin -am
+    ```
+  </Accordion>
+  <Accordion title="Authentication errors">
+    Ensure your Application Default Credentials are current:
+
+    ```shell
+    gcloud auth application-default login
+    ```
+  </Accordion>
+</AccordionGroup>

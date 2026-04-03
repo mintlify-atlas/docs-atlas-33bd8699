@@ -1,0 +1,275 @@
+---
+title: "Python Templates"
+description: "Dataflow Flex Templates whose pipeline logic is written in Python, covering word count, streaming LLM inference, anomaly detection, and generic Beam YAML execution."
+---
+
+Python templates are Dataflow [Flex Templates](https://cloud.google.com/dataflow/docs/guides/templates/using-flex-templates) whose pipeline code is written in Python rather than Java. The pipeline is containerised and run on Dataflow workers, so you do not need to manage Python environments directly — dependencies are baked into the container image.
+
+## Available Python templates
+
+<CardGroup cols={2}>
+  <Card title="Word Count" icon="text">
+    Batch pipeline. Reads text files from Cloud Storage, tokenises each line into words, and counts word frequencies. A classic "Hello, World" example for Dataflow.
+  </Card>
+  <Card title="Streaming LLM" icon="microchip">
+    Streaming pipeline. Reads prompts from a Pub/Sub subscription, runs inference against a Hugging Face model (e.g., `google/flan-t5-large`) on CPU or GPU workers, and publishes the results to a Pub/Sub topic.
+  </Card>
+  <Card title="BigQuery Anomaly Detection" icon="chart-bar">
+    Streaming pipeline (experimental). Polls a BigQuery table for CDC changes, computes a configurable windowed metric, runs anomaly detection (ZScore, IQR, or RobustZScore), and publishes anomalies to Pub/Sub and optionally a BigQuery sink table.
+  </Card>
+  <Card title="YAML Template" icon="file-code">
+    Generic pipeline runner. Accepts any Apache Beam YAML pipeline as an inline string (`yaml_pipeline`) or a Cloud Storage path (`yaml_pipeline_file`) and executes it on Dataflow.
+  </Card>
+</CardGroup>
+
+## Template reference
+
+### Word Count
+
+| Parameter | Required | Description |
+|---|---|---|
+| `input` | Yes | Cloud Storage path pattern for input text files (e.g., `gs://dataflow-samples/shakespeare/kinglear.txt`). |
+| `output` | Yes | Cloud Storage path prefix for output count files (e.g., `gs://my-bucket/counts`). |
+
+### Streaming LLM
+
+| Parameter | Required | Description |
+|---|---|---|
+| `input_subscription` | Yes | Pub/Sub subscription to read prompts from (`projects/<project>/subscriptions/<name>`). |
+| `output_topic` | Yes | Pub/Sub topic to publish inference results to (`projects/<project>/topics/<name>`). |
+| `model_name` | Yes | Hugging Face model identifier (e.g., `google/flan-t5-large`). |
+| `device` | Yes | Inference device: `CPU` or `GPU`. |
+
+<Warning>
+  GPU workers require a machine type with attached accelerators (e.g., `n1-standard-4` with a Tesla T4). Make sure Dataflow has quota for the GPU type in your region before launching.
+</Warning>
+
+### BigQuery Anomaly Detection
+
+| Parameter | Required | Description |
+|---|---|---|
+| `table` | Yes | BigQuery table to monitor (`project:dataset.table`). |
+| `metric_spec` | Yes | JSON defining the windowed metric (e.g., `{"aggregation":{"window":{"type":"fixed","size_seconds":3600},"measures":[{"field":"amount","agg":"SUM","alias":"total"}]}}`). |
+| `detector_spec` | Yes | JSON defining the anomaly detector (e.g., `{"type":"ZScore"}`). |
+| `topic` | Yes | Pub/Sub topic for anomaly results (`projects/<project>/topics/<name>`). |
+| `poll_interval_sec` | No | Seconds between BigQuery CDC polls. Default: `60`. |
+| `change_function` | No | BigQuery change function: `APPENDS` or `CHANGES`. Default: `APPENDS`. |
+| `sink_table` | No | Optional BigQuery table to write all detection results to. |
+
+### YAML Template
+
+| Parameter | Required | Description |
+|---|---|---|
+| `yaml_pipeline` | No | Inline Beam YAML pipeline string. |
+| `yaml_pipeline_file` | No | Cloud Storage path to a `.yaml` pipeline file. |
+| `jinja_variables` | No | JSON dict of Jinja2 variables to inject into the pipeline template. |
+
+<Note>
+  At least one of `yaml_pipeline` or `yaml_pipeline_file` must be provided at runtime.
+</Note>
+
+## Prerequisites
+
+<CardGroup cols={2}>
+  <Card title="Java 11+" icon="java">
+    Required to run the Maven build and staging commands. Java 17 is required for the YAML Template and BigQuery Anomaly Detection templates.
+  </Card>
+  <Card title="Maven" icon="box">
+    The build system used to compile, containerise, and stage templates to Cloud Storage.
+  </Card>
+  <Card title="gcloud CLI" icon="terminal">
+    Used to authenticate and run templates. Install from the [Cloud SDK documentation](https://cloud.google.com/sdk/docs/install).
+  </Card>
+  <Card title="Artifact Registry" icon="package">
+    A Docker repository in Artifact Registry (or GCR) is required to store Flex Template container images.
+  </Card>
+</CardGroup>
+
+After installing the gcloud CLI, authenticate:
+
+```bash
+gcloud auth login
+gcloud auth application-default login
+```
+
+## Running Python templates with gcloud
+
+<Tabs>
+  <Tab title="Word Count">
+    <Steps>
+      <Step title="Stage the template">
+        ```bash
+        export PROJECT=my-project
+        export BUCKET=my-bucket
+
+        mvn clean package -PtemplatesStage \
+          -DskipTests \
+          -DprojectId="$PROJECT" \
+          -DbucketName="$BUCKET" \
+          -DstagePrefix="templates" \
+          -DtemplateName="Word_Count_Python" \
+          -pl python \
+          -am
+        ```
+      </Step>
+      <Step title="Run the staged template">
+        ```bash
+        export PROJECT=my-project
+        export BUCKET=my-bucket
+        export REGION=us-central1
+        export TEMPLATE_SPEC_GCSPATH="gs://$BUCKET/templates/flex/Word_Count_Python"
+
+        export INPUT=gs://dataflow-samples/shakespeare/kinglear.txt
+        export OUTPUT=gs://$BUCKET/counts/word-count
+
+        gcloud dataflow flex-template run "word-count-python-job" \
+          --project "$PROJECT" \
+          --region "$REGION" \
+          --template-file-gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+          --parameters "input=$INPUT" \
+          --parameters "output=$OUTPUT"
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Streaming LLM">
+    <Steps>
+      <Step title="Stage the template">
+        ```bash
+        export PROJECT=my-project
+        export BUCKET=my-bucket
+
+        mvn clean package -PtemplatesStage \
+          -DskipTests \
+          -DprojectId="$PROJECT" \
+          -DbucketName="$BUCKET" \
+          -DstagePrefix="templates" \
+          -DtemplateName="Streaming_LLM" \
+          -pl python \
+          -am
+        ```
+      </Step>
+      <Step title="Run the staged template">
+        ```bash
+        export PROJECT=my-project
+        export BUCKET=my-bucket
+        export REGION=us-central1
+        export TEMPLATE_SPEC_GCSPATH="gs://$BUCKET/templates/flex/Streaming_LLM"
+
+        export INPUT_SUBSCRIPTION=projects/$PROJECT/subscriptions/my-subscription
+        export OUTPUT_TOPIC=projects/$PROJECT/topics/my-results-topic
+        export MODEL_NAME=google/flan-t5-large
+        export DEVICE=CPU
+
+        gcloud dataflow flex-template run "streaming-llm-job" \
+          --project "$PROJECT" \
+          --region "$REGION" \
+          --template-file-gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+          --parameters "input_subscription=$INPUT_SUBSCRIPTION" \
+          --parameters "output_topic=$OUTPUT_TOPIC" \
+          --parameters "model_name=$MODEL_NAME" \
+          --parameters "device=$DEVICE"
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="BigQuery Anomaly Detection">
+    <Steps>
+      <Step title="Stage the template">
+        ```bash
+        export PROJECT=my-project
+        export BUCKET=my-bucket
+        export ARTIFACT_REGISTRY=us-central1-docker.pkg.dev/$PROJECT/my-repo
+
+        mvn clean package -PtemplatesStage \
+          -DskipTests \
+          -DprojectId="$PROJECT" \
+          -DbucketName="$BUCKET" \
+          -DartifactRegistry="$ARTIFACT_REGISTRY" \
+          -DstagePrefix="templates" \
+          -DtemplateName="BigQuery_Anomaly_Detection" \
+          -f python
+        ```
+      </Step>
+      <Step title="Run the staged template">
+        ```bash
+        export PROJECT=my-project
+        export BUCKET=my-bucket
+        export REGION=us-central1
+        export TEMPLATE_SPEC_GCSPATH="gs://$BUCKET/templates/flex/BigQuery_Anomaly_Detection"
+
+        export TABLE=$PROJECT:my_dataset.my_table
+        export METRIC_SPEC='{"aggregation":{"window":{"type":"fixed","size_seconds":3600},"measures":[{"field":"amount","agg":"SUM","alias":"total"}]}}'
+        export DETECTOR_SPEC='{"type":"ZScore"}'
+        export TOPIC=projects/$PROJECT/topics/anomaly-results
+
+        gcloud dataflow flex-template run "bq-anomaly-detection-job" \
+          --project "$PROJECT" \
+          --region "$REGION" \
+          --template-file-gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+          --parameters "table=$TABLE" \
+          --parameters "metric_spec=$METRIC_SPEC" \
+          --parameters "detector_spec=$DETECTOR_SPEC" \
+          --parameters "topic=$TOPIC"
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="YAML Template">
+    <Steps>
+      <Step title="Stage the template">
+        ```bash
+        export PROJECT=my-project
+        export BUCKET=my-bucket
+        export ARTIFACT_REGISTRY=us-central1-docker.pkg.dev/$PROJECT/my-repo
+
+        mvn clean package -PtemplatesStage \
+          -DskipTests \
+          -DprojectId="$PROJECT" \
+          -DbucketName="$BUCKET" \
+          -DartifactRegistry="$ARTIFACT_REGISTRY" \
+          -DstagePrefix="templates" \
+          -DtemplateName="Yaml_Template" \
+          -f python
+        ```
+      </Step>
+      <Step title="Run the staged template with a pipeline file">
+        ```bash
+        export PROJECT=my-project
+        export BUCKET=my-bucket
+        export REGION=us-central1
+        export TEMPLATE_SPEC_GCSPATH="gs://$BUCKET/templates/flex/Yaml_Template"
+
+        gcloud dataflow flex-template run "yaml-template-job" \
+          --project "$PROJECT" \
+          --region "$REGION" \
+          --template-file-gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+          --parameters "yaml_pipeline_file=gs://$BUCKET/pipelines/my_pipeline.yaml"
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Python dependency management
+
+Python Flex Templates use a `requirements.txt` file baked into the container image at build time. The repository maintains separate base requirements files for different template families:
+
+| File | Used by |
+|---|---|
+| `default_base_python_requirements.txt` | Standard Python templates (Word Count) |
+| `default_base_yaml_requirements.txt` | YAML Template runner |
+| `default_base_bqmonitor_requirements.txt` | BigQuery Anomaly Detection |
+
+To update or validate dependencies, use the generation scripts in the `python/` directory:
+
+```bash
+# Regenerate all dependency lock files
+./python/generate_all_dependencies.sh
+```
+
+For full details on validating and upgrading Beam versions, see the [maintainers guide](https://github.com/GoogleCloudPlatform/DataflowTemplates/blob/main/contributor-docs/maintainers-guide.md#validating-and-upgrading-beam-versions).
+
+<Tip>
+  All Python templates are Flex Templates, so each template gets its own container image. You can customise the image by editing the `Dockerfile` in the template's source directory and re-staging the template.
+</Tip>

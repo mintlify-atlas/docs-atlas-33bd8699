@@ -1,0 +1,192 @@
+---
+title: "Datastream to BigQuery"
+description: "Replicate change data capture (CDC) events from Datastream into BigQuery using continuous MERGE operations."
+---
+
+## Overview
+
+The Datastream to BigQuery template is a streaming pipeline that reads Datastream CDC event data and replicates it into BigQuery. The template reads Datastream output files from Cloud Storage (delivered via Pub/Sub notifications) and writes them into time-partitioned BigQuery staging tables. After each batch of changes is staged, the pipeline runs a BigQuery `MERGE` statement to upsert all changes into the final replica table.
+
+Use this template to set up continuous database replication from sources supported by Datastream — including MySQL, PostgreSQL, and Oracle — into BigQuery.
+
+### Schema change handling
+
+The template automatically manages BigQuery table schema in response to DDL changes in the source database:
+
+- **New tables**: Created in BigQuery as data arrives.
+- **New columns**: Added to BigQuery tables with `null` initial values.
+- **Dropped columns**: Ignored in BigQuery; future values are `null`.
+- **Renamed columns**: Added as new columns in BigQuery.
+- **Type changes**: Not propagated to BigQuery.
+
+<Warning>
+  This template does not propagate schema changes that would break existing column types. A breaking schema change in Cloud Spanner or your source database may require recreating the pipeline.
+</Warning>
+
+### Template name
+
+`Cloud_Datastream_to_BigQuery` (Flex template)
+
+## Parameters
+
+### Required parameters
+
+<ParamField path="inputFileFormat" type="string" required>
+  The format of output files produced by Datastream. Accepted values: `avro`, `json`. Default: `avro`.
+</ParamField>
+
+<ParamField path="outputStagingDatasetTemplate" type="string" required>
+  The BigQuery dataset for staging tables. Supports templates such as `{_metadata_dataset}_log` or a literal dataset name. Default: `{_metadata_dataset}`.
+
+  <Note>For MySQL sources, the database name maps to `{_metadata_schema}` instead of `{_metadata_dataset}`.</Note>
+</ParamField>
+
+<ParamField path="outputDatasetTemplate" type="string" required>
+  The BigQuery dataset for final replica tables. Supports templates such as `{_metadata_dataset}` or a literal dataset name. Default: `{_metadata_dataset}`.
+</ParamField>
+
+<ParamField path="deadLetterQueueDirectory" type="string" required>
+  The Cloud Storage path for dead-letter queue output. Must be different from the Datastream file output path. For example, `gs://my-bucket/dlq/`.
+</ParamField>
+
+### Optional parameters
+
+<ParamField path="inputFilePattern" type="string">
+  The Cloud Storage file location for Datastream output, in the format `gs://BUCKET_NAME/ROOT_PATH/`. Provide either this parameter or `gcsPubSubSubscription`.
+</ParamField>
+
+<ParamField path="gcsPubSubSubscription" type="string">
+  The Pub/Sub subscription used by Cloud Storage to notify Dataflow of new files. Format: `projects/PROJECT_ID/subscriptions/SUBSCRIPTION_NAME`. Provide either this or `inputFilePattern`.
+</ParamField>
+
+<ParamField path="streamName" type="string">
+  The name or template for the Datastream stream to poll for schema information. Default: `{_metadata_stream}`.
+</ParamField>
+
+<ParamField path="rfcStartDateTime" type="string">
+  The starting DateTime (RFC 3339) from which to fetch data from Cloud Storage. For example, `2024-01-01T00:00:00.00Z`. Default: `1970-01-01T00:00:00.00Z`.
+</ParamField>
+
+<ParamField path="fileReadConcurrency" type="number">
+  The number of concurrent Datastream files to read. Default: `10`.
+</ParamField>
+
+<ParamField path="outputProjectId" type="string">
+  The Google Cloud project containing the destination BigQuery datasets. Default: the Dataflow job project.
+</ParamField>
+
+<ParamField path="outputStagingTableNameTemplate" type="string">
+  Template for the staging table name. For example, `{_metadata_table}`. Default: `{_metadata_table}_log`.
+</ParamField>
+
+<ParamField path="outputTableNameTemplate" type="string">
+  Template for the final replica table name. For example, `{_metadata_table}`. Default: `{_metadata_table}`.
+</ParamField>
+
+<ParamField path="ignoreFields" type="string">
+  Comma-separated list of fields to exclude from BigQuery inserts. Default: `_metadata_stream,_metadata_schema,_metadata_table,_metadata_source,_metadata_tx_id,_metadata_dlq_reconsumed,_metadata_primary_keys,_metadata_error,_metadata_retry_count`.
+</ParamField>
+
+<ParamField path="mergeFrequencyMinutes" type="number">
+  The number of minutes between MERGE operations for a given table. Default: `5`.
+</ParamField>
+
+<ParamField path="applyMerge" type="boolean">
+  Whether to run BigQuery MERGE queries. Set to `false` to disable merging and write only to staging tables. Default: `true`.
+</ParamField>
+
+<ParamField path="mergeConcurrency" type="number">
+  The number of concurrent BigQuery MERGE queries. Effective only when `applyMerge` is `true`. Default: `30`.
+</ParamField>
+
+<ParamField path="partitionRetentionDays" type="number">
+  The number of days to retain staging table partitions when running MERGE. Default: `1`.
+</ParamField>
+
+<ParamField path="dlqRetryMinutes" type="number">
+  The number of minutes between dead-letter queue retry attempts. Default: `10`.
+</ParamField>
+
+<ParamField path="datastreamSourceType" type="string">
+  Override the source type detection for Datastream CDC data. Use when the `read_method` field contains `cdc` and the source type cannot be determined automatically. Accepted values: `mysql`, `postgresql`, `oracle`.
+</ParamField>
+
+<ParamField path="useStorageWriteApi" type="boolean">
+  If `true`, use the BigQuery Storage Write API. Default: `false`.
+</ParamField>
+
+<ParamField path="useStorageWriteApiAtLeastOnce" type="boolean">
+  When using the Storage Write API, use at-least-once semantics. Applies only when `useStorageWriteApi` is `true`. Default: `false`.
+</ParamField>
+
+<ParamField path="numStorageWriteApiStreams" type="number">
+  Number of Storage Write API streams. Required when `useStorageWriteApi` is `true` and `useStorageWriteApiAtLeastOnce` is `false`. Default: `0`.
+</ParamField>
+
+<ParamField path="storageWriteApiTriggeringFrequencySec" type="number">
+  Triggering frequency in seconds for the Storage Write API. Required when `useStorageWriteApi` is `true` and `useStorageWriteApiAtLeastOnce` is `false`.
+</ParamField>
+
+<ParamField path="javascriptTextTransformGcsPath" type="string">
+  Cloud Storage URI of the `.js` file defining a JavaScript UDF.
+</ParamField>
+
+<ParamField path="javascriptTextTransformFunctionName" type="string">
+  The name of the JavaScript UDF function to invoke.
+</ParamField>
+
+<ParamField path="pythonTextTransformGcsPath" type="string">
+  Cloud Storage path pattern for Python UDF files. For example, `gs://my-bucket/transforms/*.py`.
+</ParamField>
+
+<ParamField path="pythonTextTransformFunctionName" type="string">
+  The name of the Python UDF function to invoke.
+</ParamField>
+
+## Running the template
+
+<Steps>
+  <Step title="Set environment variables">
+    ```bash
+    export PROJECT="my-project"
+    export REGION="us-central1"
+
+    # Required
+    export INPUT_FILE_FORMAT="avro"
+    export OUTPUT_STAGING_DATASET_TEMPLATE="{_metadata_dataset}"
+    export OUTPUT_DATASET_TEMPLATE="{_metadata_dataset}"
+    export DEAD_LETTER_QUEUE_DIRECTORY="gs://my-bucket/dlq/"
+
+    # Optional: choose one input method
+    export GCS_PUB_SUB_SUBSCRIPTION="projects/my-project/subscriptions/datastream-sub"
+    # or
+    export INPUT_FILE_PATTERN="gs://my-bucket/datastream-output/"
+    ```
+  </Step>
+  <Step title="Run the job">
+    ```bash
+    gcloud dataflow flex-template run "datastream-to-bigquery-$(date +'%Y%m%d-%H%M%S')" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location "gs://dataflow-templates-$REGION/latest/flex/Cloud_Datastream_to_BigQuery" \
+      --parameters "inputFileFormat=$INPUT_FILE_FORMAT" \
+      --parameters "outputStagingDatasetTemplate=$OUTPUT_STAGING_DATASET_TEMPLATE" \
+      --parameters "outputDatasetTemplate=$OUTPUT_DATASET_TEMPLATE" \
+      --parameters "deadLetterQueueDirectory=$DEAD_LETTER_QUEUE_DIRECTORY" \
+      --parameters "gcsPubSubSubscription=$GCS_PUB_SUB_SUBSCRIPTION"
+    ```
+  </Step>
+</Steps>
+
+## Running via the console
+
+Open the [Dataflow Create job from template](https://console.cloud.google.com/dataflow/createjob) page and select **Datastream to BigQuery** from the template list.
+
+## Notes
+
+- **Merge behavior**: The pipeline stages incoming change records into partitioned `_log` tables and then periodically runs `MERGE` statements to upsert changes into the final replica tables. The merge frequency is controlled by `mergeFrequencyMinutes`.
+- **Dead-letter queue**: Records that cannot be processed are written to `deadLetterQueueDirectory` in Cloud Storage and retried on a schedule controlled by `dlqRetryMinutes`. Disable retries by setting a very large retry interval.
+- **Template metadata fields**: Each BigQuery row inserted by the pipeline includes metadata fields (prefixed with `_metadata_`) that carry replication context such as the source table name, commit timestamp, and operation type. These can be excluded using the `ignoreFields` parameter.
+- **Stale reads**: For `OLD_AND_NEW_VALUES` and `NEW_VALUES` Spanner value capture types, the template performs stale reads to retrieve unchanged watched columns. Ensure your database `version_retention_period` is configured to accommodate these reads.
+- **Delivery semantics**: This template provides at-least-once delivery for staging writes. The `MERGE` step is idempotent, so duplicate staging rows are safely deduplicated during the merge operation.
+- **Region colocation**: Run the Dataflow job in the same region as your Datastream stream and BigQuery datasets to minimize network costs and latency.

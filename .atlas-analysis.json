@@ -1,0 +1,110 @@
+{
+  "projectType": "data-platform",
+  "projectName": "Google Cloud Dataflow Templates",
+  "projectDescription": "A collection of Google-provided Apache Beam pipeline templates for streaming and batch data movement between Google Cloud services and external systems.",
+  "theme": "sequoia",
+  "primaryColor": "#ec4434",
+  "lightColor": "#34ac54",
+  "darkColor": "#4484f4",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "concepts"
+            ]
+          },
+          {
+            "group": "Template Guides",
+            "pages": [
+              "guides/streaming-templates",
+              "guides/batch-templates",
+              "guides/yaml-templates",
+              "guides/python-templates",
+              "guides/udfs"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/setup",
+              "development/creating-flex-templates",
+              "development/metadata-annotations",
+              "development/testing",
+              "development/terraform"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "operations/staging-and-running",
+              "operations/release-process",
+              "operations/contributing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Template Reference",
+        "groups": [
+          {
+            "group": "Streaming Templates",
+            "pages": [
+              "templates/streaming/pubsub-to-bigquery",
+              "templates/streaming/kafka-to-bigquery",
+              "templates/streaming/datastream-to-bigquery",
+              "templates/streaming/spanner-change-streams"
+            ]
+          },
+          {
+            "group": "Batch Templates",
+            "pages": [
+              "templates/batch/gcs-to-bigquery",
+              "templates/batch/bigquery-to-bigtable",
+              "templates/batch/jdbc-to-bigquery",
+              "templates/batch/spanner-export-import"
+            ]
+          },
+          {
+            "group": "Utility Templates",
+            "pages": [
+              "templates/utilities/file-format-conversion",
+              "templates/utilities/streaming-data-generator"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "50+ pre-built streaming and batch pipeline templates",
+    "Apache Beam-powered pipelines on Google Cloud Dataflow",
+    "Flex Templates (v2) for containerized, parameterized pipelines",
+    "YAML Templates for declarative pipeline definitions",
+    "Python Templates for ML and analytics workloads",
+    "User-Defined Functions (UDFs) via JavaScript for custom transformations",
+    "Terraform module generation for infrastructure-as-code deployments",
+    "Templates Maven Plugin for staging, running, and testing templates",
+    "Integration with BigQuery, Bigtable, Spanner, Pub/Sub, GCS, Kafka, Elasticsearch, and more",
+    "Automatic documentation and parameter spec generation"
+  ],
+  "publicApiSurface": [
+    "@Template annotation — declares a Dataflow template with name, category, description, and options class",
+    "@TemplateParameter.{Type} annotations — defines typed, validated pipeline parameters (Text, GcsReadFile, GcsWriteFolder, Boolean, Integer, Enum, etc.)",
+    "@TemplateIntegrationTest annotation — wires integration test classes to templates",
+    "TemplateCategory enum — GET_STARTED, BATCH, STREAMING, UTILITIES",
+    "mvn -PtemplatesStage — stages a template to GCS and Artifact Registry",
+    "mvn -PtemplatesRun — stages and runs a template on Dataflow",
+    "mvn -PtemplatesValidate — validates template code quality",
+    "mvn -PtemplatesTerraform — generates Terraform modules for templates",
+    "mvn -PtemplatesSpec — generates documentation and parameter specs",
+    "mvn -PtemplatesRelease — executes a full release of all templates",
+    "mvn -PtemplatesIntegrationTests — runs integration tests against live Dataflow",
+    "UDF transform(inJson) JavaScript function contract — input/output string transformation"
+  ]
+}

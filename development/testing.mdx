@@ -1,0 +1,356 @@
+---
+title: "Testing"
+description: "Write and run unit tests, integration tests, and load tests for Dataflow Templates."
+---
+
+## Unit tests
+
+Unit tests run locally using the Beam `DirectRunner` and do not require any Google Cloud resources. They are the fastest way to verify pipeline logic.
+
+### Structure
+
+Unit tests follow the **Arrange, Act, Assert** pattern. Use [Google Truth](https://github.com/google/truth) for assertions — avoid assertion libraries used in older templates. The only exception is `assertThrows` from JUnit, which has no good Truth equivalent.
+
+```java WordCountTest.java
+package com.google.cloud.teleport.v2.templates;
+
+import static com.google.common.truth.Truth.assertThat;
+
+import org.apache.beam.sdk.testing.PAssert;
+import org.apache.beam.sdk.testing.TestPipeline;
+import org.apache.beam.sdk.values.PCollection;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
+
+@RunWith(JUnit4.class)
+public final class WordCountTest {
+
+  @Rule
+  public final transient TestPipeline pipeline = TestPipeline.create();
+
+  @Test
+  public void testWordCount_returnsValidCount() throws IOException {
+    // Arrange
+    PCollection<String> inputLines = pipeline.apply("Read Lines",
+        TextIO.read().from(filePath));
+
+    // Act
+    PCollection<String> results = WordCount.applyTransforms(inputLines);
+
+    // Assert
+    PAssert.that(results)
+        .satisfies(pcollection -> {
+          List<String> result = new ArrayList<>();
+          pcollection.iterator().forEachRemaining(result::add);
+          assertThat(result).containsExactlyElementsIn(expected);
+          return null;
+        });
+
+    pipeline.run();
+  }
+}
+```
+
+### Key testing utilities
+
+| Utility | Purpose |
+|---------|---------|
+| `TestPipeline` | Creates a Beam pipeline that runs locally during tests |
+| `PAssert` | Asserts on the contents of a `PCollection` |
+| `TemporaryFolder` | JUnit rule for managing temporary files in tests |
+| `Google Truth` | Fluent assertion library (`assertThat(x).isEqualTo(y)`) |
+
+### Running unit tests
+
+```bash
+# Run all tests in a module
+mvn clean test -pl v2/wordcount -am
+
+# Run a specific test class
+mvn clean test -pl v2/wordcount -am \
+  -Dtest=WordCountTest -DfailIfNoTests=false
+
+# Run a specific test method
+mvn clean test -pl v2/wordcount -am \
+  -Dtest=WordCountTest#testWordCount_returnsValidCount -DfailIfNoTests=false
+```
+
+Use `-DfailIfNoTests=false` when testing a single module to prevent failures in dependency modules that have no tests of their own.
+
+---
+
+## Integration tests
+
+Integration tests run against live Dataflow and Google Cloud resources. They verify end-to-end behavior that cannot be tested locally.
+
+### Structure
+
+Every integration test class must:
+
+1. Be annotated with `@TemplateIntegrationTest`, referencing the template class under test
+2. Extend `TemplateTestBase`
+3. Follow the naming convention `<TemplateName>IT`
+
+```java WordCountIT.java
+import com.google.cloud.teleport.metadata.TemplateIntegrationTest;
+import org.apache.beam.it.gcp.TemplateTestBase;
+import org.junit.runners.JUnit4;
+
+@Category({TemplateIntegrationTest.class})
+@TemplateIntegrationTest(WordCount.class)
+@RunWith(JUnit4.class)
+public class WordCountIT extends TemplateTestBase {
+  // test cases
+}
+```
+
+`TemplateTestBase` handles template staging and environment setup automatically before tests run. It also exposes helper clients for interacting with Google Cloud services.
+
+### Resource managers
+
+Resource managers create and tear down cloud resources (topics, tables, buckets) needed by each test. Set them up in `@Before` and clean them up in `@After`.
+
+```java
+private static PubsubResourceManager pubsubResourceManager;
+
+@Before
+public void setup() throws IOException {
+  pubsubResourceManager =
+    DefaultPubsubResourceManager.builder(testName, PROJECT)
+      .credentialsProvider(CREDENTIALS_PROVIDER)
+      .build();
+}
+
+@After
+public void tearDown() {
+  ResourceManagerUtils.cleanResources(pubsubResourceManager);
+}
+
+@Test
+public void testBacklog() {
+  TopicName backlogTopic = pubsubResourceManager.createTopic("backlog-input");
+  // ... test logic
+}
+```
+
+### Running integration tests
+
+Integration tests require a Google Cloud project, a GCS bucket, and valid credentials.
+
+```bash
+# Run all integration tests in a module
+mvn clean verify \
+  -PtemplatesIntegrationTests \
+  -Dproject="{project}" \
+  -DartifactBucket="{bucketName}" \
+  -Dregion=us-central1 \
+  -pl v2/googlecloud-to-googlecloud -am
+
+# Run a specific test class
+mvn clean verify \
+  -PtemplatesIntegrationTests \
+  -Dproject="{project}" \
+  -DartifactBucket="{bucketName}" \
+  -Dregion=us-central1 \
+  -Dtest=PubsubToTextIT \
+  -pl v2/googlecloud-to-googlecloud -am
+
+# Run a specific test method
+mvn clean verify \
+  -PtemplatesIntegrationTests \
+  -Dproject="{project}" \
+  -DartifactBucket="{bucketName}" \
+  -Dregion=us-central1 \
+  -Dtest=PubsubToTextIT#testTopicToGcs \
+  -pl v2/googlecloud-to-googlecloud -am
+```
+
+### Running from an IDE
+
+When running integration tests from an IDE, add the following as program or VM arguments:
+
+```
+-Dproject=<your-project>
+-DartifactBucket=<your-bucket>
+-Dregion=<your-region>
+```
+
+<Warning>
+  Integration tests that use container-based resource managers (such as Kafka) only work on GitHub Actions. The test machine spins up a Kafka container, and the Dataflow worker must be on the same network to reach it. This setup is not reproducible in a standard local or IDE environment.
+</Warning>
+
+---
+
+## Load tests
+
+Load tests stress-test a template at scale by generating large volumes of synthetic data and measuring throughput, latency, and resource usage under realistic conditions.
+
+### Structure
+
+Load test classes extend `LoadTestBase` (for Google-provided templates) or `IOLoadTestBase` (for Apache Beam I/O load tests). They must implement a `launcher()` method that returns the appropriate `PipelineLauncher`.
+
+```java WordCountLoadTest.java
+import com.google.cloud.teleport.metadata.TemplateLoadTest;
+import com.google.cloud.teleport.it.TemplateLoadTestBase;
+import org.junit.runners.JUnit4;
+
+@Category(TemplateLoadTest.class)
+@TemplateLoadTest(WordCount.class)
+@RunWith(JUnit4.class)
+public class WordCountLoadTest extends TemplateLoadTestBase {
+
+  PipelineLauncher launcher() {
+    return new DefaultPipelineLauncher.builder()
+        .setCredentials(CREDENTIALS)
+        .build();
+  }
+}
+```
+
+### Test case types
+
+<Tabs>
+  <Tab title="Backlog test">
+    Data is accumulated before the pipeline starts. Use this to measure how quickly a pipeline can drain a backlog.
+
+    ```java
+    @Test
+    public void testBacklog() {
+      // Create resources
+      TopicName backlogTopic = pubsubResourceManager.createTopic("backlog-input");
+      SubscriptionName backlogSubscription =
+        pubsubResourceManager.createSubscription(backlogTopic, "backlog-subscription");
+      TableId table = bigQueryResourceManager.createTable(testName, SCHEMA);
+
+      // Generate data before the pipeline starts
+      DataGenerator dataGenerator =
+        DataGenerator.builderWithSchemaTemplate(testName + "-data-generator", "GAME_EVENT")
+            .setQPS("200000")
+            .setMessagesLimit(String.valueOf(numMessages))
+            .setTopic(backlogTopic.toString())
+            .setNumWorkers("10")
+            .setMaxNumWorkers("20")
+            .build();
+      dataGenerator.execute(Duration.ofMinutes(30));
+
+      // Launch the pipeline
+      LaunchConfig options = LaunchConfig.builder(testName, SPEC_PATH)
+        .addParameter("inputSubscription", inputSubscription.toString())
+        .addParameter("outputTableSpec", toTableSpec(project, table))
+        .build();
+      LaunchInfo info = pipelineLauncher.launch(PROJECT, REGION, options);
+      assertThatPipeline(info).isRunning();
+
+      // Wait for pipeline to drain backlog, then finish
+      Result result = pipelineOperator.waitForConditionAndFinish(
+        createConfig(info, Duration.ofMinutes(40)),
+        BigQueryRowsCheck.builder(bigQueryResourceManager, table)
+          .setMinRows(NUM_MESSAGES)
+          .build());
+
+      assertThatResult(result).meetsConditions();
+    }
+    ```
+  </Tab>
+  <Tab title="Steady state test">
+    Data is generated continuously at a fixed QPS for a sustained period. Use this for streaming pipelines to measure throughput under a sustained load.
+
+    ```java
+    @Test
+    public void testSteadyState1hr() {
+      // Create resources
+      TopicName inputTopic = pubsubResourceManager.createTopic("steady-state-input");
+      TableId table = bigQueryResourceManager.createTable(
+            testName, SCHEMA, System.currentTimeMillis() + 7200000);
+
+      // Generate data continuously at 100,000 QPS
+      DataGenerator dataGenerator =
+        DataGenerator.builderWithSchemaTemplate(testName + "-data-generator", "GAME_EVENT")
+          .setQPS("100000")
+          .setTopic(inputTopic.toString())
+          .setNumWorkers("10")
+          .setMaxNumWorkers("100")
+          .build();
+
+      LaunchConfig options = LaunchConfig.builder(testName, SPEC_PATH)
+        .addParameter("inputSubscription", inputSubscription.toString())
+        .addParameter("outputTableSpec", toTableSpec(project, table))
+        .build();
+      LaunchInfo info = pipelineLauncher.launch(project, region, options);
+      assertThatPipeline(info).isRunning();
+
+      // Run for 1 hour; allow 1% variance in element count
+      int expectedMessages = (int) (dataGenerator.execute(Duration.ofMinutes(60)) * 0.99);
+
+      Result result = pipelineOperator.waitForConditionAndFinish(
+        createConfig(info, Duration.ofMinutes(20)),
+        BigQueryRowsCheck.builder(bigQueryResourceManager, table)
+          .setMinRows(expectedMessages)
+          .build());
+
+      assertThatResult(result).meetsConditions();
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Data generation
+
+The `DataGenerator` utility generates synthetic data at a specified QPS. Built-in schema templates include:
+
+- `GAME_EVENT` — Game telemetry events with user, score, and location fields
+- `LOG_ENTRY` — Structured log entries with network flow metadata
+
+```java
+DataGenerator dataGenerator =
+    DataGenerator.builderWithSchemaTemplate(testName + "-data-generator", "GAME_EVENT")
+        .setQPS("200000")
+        .setMessagesLimit(String.valueOf(numMessages))
+        .setTopic(backlogTopic.toString())
+        .build();
+
+// Blocking call — returns the actual number of messages generated
+long messagesGenerated = dataGenerator.execute(Duration.ofMinutes(30));
+```
+
+`DataGenerator.execute()` is a blocking call. If `messagesLimit` is set, it returns after generating that many messages. If not set, it generates messages at the specified QPS until timeout.
+
+### Running load tests
+
+```bash
+# Authenticate
+gcloud auth application-default login
+
+# Run a specific load test
+mvn test -Dtest="WordCountLoadTest#testBacklog" \
+  -Dproject=$PROJECT \
+  -DartifactBucket=$ARTIFACT_BUCKET \
+  -DexportProject=$EXPORT_PROJECT \
+  -DexportDataset=$EXPORT_DATASET \
+  -DexportTable=$EXPORT_TABLE \
+  -DfailIfNoTests=false -DtrimStackTrace=false
+```
+
+### Exporting metrics to BigQuery
+
+After a load test completes, export performance metrics to BigQuery for analysis:
+
+```java
+@Test
+public void testBacklog() {
+  // ... run the test ...
+  exportMetricsToBigQuery(info, getMetrics(info, INPUT_PCOLLECTION, OUTPUT_PCOLLECTION));
+}
+```
+
+Pass the export target via command-line parameters:
+
+| Parameter | Description |
+|-----------|-------------|
+| `-DexportProject` | BigQuery project for metrics export (defaults to `-Dproject`) |
+| `-DexportDataset` | BigQuery dataset for metrics export |
+| `-DexportTable` | BigQuery table for metrics export |
+
+If these parameters are not provided, metrics are printed to the console but not exported.

@@ -1,0 +1,70 @@
+---
+title: "Google Cloud Dataflow Templates"
+description: "Pre-built Apache Beam pipelines for streaming and batch data movement on Google Cloud Dataflow — no development environment required."
+---
+
+Google Cloud Dataflow Templates are a collection of pre-implemented pipeline solutions for common in-Cloud data tasks: import, export, backup, restore, and bulk API operations. Built on [Apache Beam](https://beam.apache.org/), these templates run on the fully managed [Google Cloud Dataflow](https://cloud.google.com/dataflow/) service.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Deploy and run your first template in minutes
+  </Card>
+  <Card title="Core Concepts" icon="lightbulb" href="/concepts">
+    Understand Flex Templates, classic templates, and pipeline parameters
+  </Card>
+  <Card title="Streaming Templates" icon="water" href="/guides/streaming-templates">
+    Real-time pipelines for Pub/Sub, Kafka, Datastream, and more
+  </Card>
+  <Card title="Batch Templates" icon="database" href="/guides/batch-templates">
+    Bulk data movement between GCS, BigQuery, Spanner, Bigtable, and databases
+  </Card>
+</CardGroup>
+
+## What are Dataflow Templates?
+
+Dataflow Templates let you run pre-built data pipelines without writing code. You provide parameters — source, destination, configuration — and Dataflow handles the rest. Templates come in two flavors:
+
+- **Flex Templates** (v2): Packaged as Docker containers in Artifact Registry. Support dynamic parameters and advanced configurations. All new templates use this format.
+- **Classic Templates** (v1): Staged as files in Cloud Storage. Simpler but more limited in parameter types.
+
+## Template categories
+
+<CardGroup cols={3}>
+  <Card title="Streaming" icon="signal-stream" href="/guides/streaming-templates">
+    Continuous pipelines for real-time data ingestion from Pub/Sub, Kafka, Datastream, and CDC sources
+  </Card>
+  <Card title="Batch" icon="layer-group" href="/guides/batch-templates">
+    One-time or scheduled pipelines for bulk data export, import, and transformation
+  </Card>
+  <Card title="YAML" icon="file-code" href="/guides/yaml-templates">
+    Declarative pipeline definitions using Apache Beam YAML syntax
+  </Card>
+  <Card title="Python" icon="python" href="/guides/python-templates">
+    Python-based templates for ML and analytics workloads
+  </Card>
+  <Card title="UDFs" icon="function" href="/guides/udfs">
+    JavaScript User-Defined Functions for custom data transformations
+  </Card>
+  <Card title="Template Reference" icon="book" href="/templates/streaming/pubsub-to-bigquery">
+    Full parameter reference for all available templates
+  </Card>
+</CardGroup>
+
+## For contributors
+
+If you want to build, customize, or extend templates:
+
+<CardGroup cols={2}>
+  <Card title="Development setup" icon="wrench" href="/development/setup">
+    Prerequisites, IDE configuration, and Maven commands
+  </Card>
+  <Card title="Creating Flex Templates" icon="plus" href="/development/creating-flex-templates">
+    Step-by-step guide to building a new Flex Template
+  </Card>
+  <Card title="Metadata annotations" icon="tag" href="/development/metadata-annotations">
+    @Template, @TemplateParameter, and integration test annotations
+  </Card>
+  <Card title="Staging and running" icon="play" href="/operations/staging-and-running">
+    Deploy templates to your own GCP project
+  </Card>
+</CardGroup>

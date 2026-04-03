@@ -1,0 +1,131 @@
+---
+title: "Contributing"
+description: "How to contribute bug fixes, improvements, and new templates to the Dataflow Templates repository."
+---
+
+## How to contribute
+
+<Steps>
+  <Step title="Sign the Contributor License Agreement">
+    All contributions must be accompanied by a signed [Contributor License Agreement (CLA)](https://cla.developers.google.com/). You retain copyright to your contribution — the CLA only grants Google permission to use and redistribute it as part of the project.
+
+    You generally only need to sign once. If you have already signed a CLA for another Google project, you do not need to sign again.
+  </Step>
+  <Step title="Fork and develop">
+    Fork the repository, create a branch, and develop your changes. Ensure your code matches the existing style by running the formatter before committing:
+
+    ```shell
+    mvn spotless:apply
+    ```
+
+    To verify formatting without making changes:
+
+    ```shell
+    mvn spotless:check
+    ```
+  </Step>
+  <Step title="Write and run tests">
+    Ensure your changes have an appropriate set of unit tests. Run all tests and checks:
+
+    ```shell
+    mvn verify
+    ```
+  </Step>
+  <Step title="Submit a pull request">
+    Open a pull request against `main`. A maintainer will triage your PR and apply the appropriate release notes label. See the [review process](#code-review-process) below.
+  </Step>
+</Steps>
+
+## What contributions are accepted
+
+This repository focuses on stability and quality of existing templates. The following contributions are welcomed:
+
+<CardGroup cols={2}>
+  <Card title="Bug fixes" icon="bug">
+    Fixes for issues or regressions in existing templates.
+  </Card>
+  <Card title="Parameter additions" icon="sliders">
+    Exposing new parameters or features added to existing Apache Beam I/Os.
+  </Card>
+  <Card title="Performance improvements" icon="bolt">
+    Improvements that do not dramatically alter the template's behavior.
+  </Card>
+  <Card title="Minor quality-of-life improvements" icon="sparkles">
+    Small enhancements that make templates more usable without changing their core behavior.
+  </Card>
+</CardGroup>
+
+## What contributions are NOT accepted
+
+<Warning>
+The following types of contributions will not be accepted without prior approval:
+
+- **New templates** — new templates require explicit approval from the Dataflow team before any code is written. See [New template requirements](#new-template-requirements) below.
+- **Forks of Beam I/Os** — templates must not contain a duplicated or forked copy of an Apache Beam I/O connector.
+- **Large new features** — large chunks of new functionality require a formal partnership or sponsorship agreement with Google.
+</Warning>
+
+If you represent an organization interested in contributing a new template, reach out to the Dataflow team via the [Google Issue Tracker](https://issuetracker.google.com/issues/new?component=187168&template=0).
+
+## New template requirements
+
+Before writing any code for a new template, file an issue with the [Google Issue Tracker](https://issuetracker.google.com/issues/new?component=187168&template=0) and wait for approval. Once approved, your template must satisfy all of the following requirements:
+
+<AccordionGroup>
+  <Accordion title="Approval and placement">
+    - [ ] Template addition has been approved by the Dataflow team in a Google Issue Tracker issue.
+    - [ ] The template is a Flex Template located in the `v2/<template-name>` directory, following the `<source>-to-<sink>` naming convention.
+  </Accordion>
+  <Accordion title="No forked connectors">
+    - [ ] The template does not contain a duplicated or forked copy of a Beam I/O.
+  </Accordion>
+  <Accordion title="Tests">
+    - [ ] The template contains integration tests.
+    - [ ] The template contains load tests.
+  </Accordion>
+  <Accordion title="Documentation and generated artifacts">
+    - [ ] All template parameters are documented, and documentation has been auto-generated using the `templatesSpec` Maven profile.
+    - [ ] Terraform modules have been auto-generated for the template.
+  </Accordion>
+  <Accordion title="Support agreements">
+    - [ ] **Partner templates** (contributed by external organizations): a support partnership agreement and clear escalation path must exist. Contact the Dataflow team directly to establish these before contributing.
+    - [ ] **Googler-contributed templates**: `go/support-dataflow-playbook/templates-triaging` must list contact and on-call information for the owning team.
+  </Accordion>
+</AccordionGroup>
+
+## Code review process
+
+All submissions — including those from project members — require a pull request review.
+
+Some PRs receive **automatic reviews** based on the files changed, while others require you to **manually request a review** from the appropriate code owner.
+
+For details on which paths have automatic reviewers and who the owners are, see [contributor-docs/code-owners.md](https://github.com/GoogleCloudPlatform/DataflowTemplates/blob/main/contributor-docs/code-owners.md) in the repository.
+
+<Note>
+A maintainer must apply a [release notes label](/operations/release-process#pr-labels-for-release-notes) to your PR before all checks pass.
+</Note>
+
+## Formatting code
+
+Run Spotless from the root directory (or from `v2/`) to automatically format all Java source files and apply license headers:
+
+```shell
+mvn spotless:apply
+```
+
+To check formatting without modifying files:
+
+```shell
+mvn spotless:check
+```
+
+## Getting help
+
+<CardGroup cols={2}>
+  <Card title="GitHub Issues" icon="github" href="https://github.com/GoogleCloudPlatform/DataflowTemplates/issues">
+    Report bugs or ask questions about the repository.
+  </Card>
+  <Card title="Google Issue Tracker" icon="flag" href="https://issuetracker.google.com/issues/new?component=187168&template=0">
+    File requests for new template approvals or contact the Dataflow team directly.
+  </Card>
+</CardGroup>

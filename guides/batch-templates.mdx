@@ -1,0 +1,214 @@
+---
+title: "Batch Templates"
+description: "Overview of batch data processing templates for bulk export, import, migration, and format conversion on Google Cloud Dataflow."
+---
+
+Batch templates process a bounded dataset from start to finish and then exit. They are the right choice when you have a fixed set of data — a file, a database snapshot, or a scheduled export — and need to move, transform, or load it reliably.
+
+## When to use batch templates
+
+<CardGroup cols={2}>
+  <Card title="Scheduled exports" icon="calendar">
+    Run nightly or weekly jobs to export BigQuery tables, Spanner databases, or Bigtable data to Cloud Storage for archival or downstream consumption.
+  </Card>
+  <Card title="One-time migrations" icon="arrow-right">
+    Move data from an on-premises database (MySQL, PostgreSQL, SQL Server, Cassandra) to a managed Google Cloud service.
+  </Card>
+  <Card title="Format conversion" icon="file-code">
+    Convert files between Avro, Parquet, CSV, and SequenceFile formats without writing custom pipeline code.
+  </Card>
+  <Card title="Bulk API operations" icon="bolt">
+    Load large volumes of data into Bigtable, Spanner, Elasticsearch, or MongoDB in a parallelised, fault-tolerant way.
+  </Card>
+</CardGroup>
+
+<Note>
+  Use a **streaming** template instead when your data arrives continuously (Pub/Sub, Kafka, change streams) or when you need low-latency, sub-second processing.
+</Note>
+
+## Common patterns
+
+### Export / backup
+
+Read from a managed Google Cloud service and write structured files to Cloud Storage for long-term storage or cross-region transfer:
+
+```
+BigQuery   → BigQuery export to Parquet          → Cloud Storage
+Spanner    → Cloud Spanner to Avro               → Cloud Storage
+Bigtable   → Cloud Bigtable to Avro/Parquet      → Cloud Storage
+Firestore  → Firestore to Text Files             → Cloud Storage
+```
+
+### Import / restore
+
+Read files from Cloud Storage and load them into a Google Cloud service:
+
+```
+Cloud Storage (Avro)    → Avro Files to Cloud Spanner   → Spanner
+Cloud Storage (Parquet) → Parquet Files to Cloud Bigtable → Bigtable
+Cloud Storage (Text)    → Text Files to BigQuery         → BigQuery
+```
+
+### Cross-service migration
+
+Move data between services without manual format handling:
+
+```
+BigQuery         → BigQuery to Bigtable       → Bigtable
+BigQuery         → BigQuery to Elasticsearch  → Elasticsearch
+BigQuery         → BigQuery to MongoDB        → MongoDB
+Cassandra        → Cassandra to Cloud Bigtable → Bigtable
+Any JDBC source  → Any SourceDB to Spanner    → Spanner
+```
+
+### Database-to-BigQuery ingestion
+
+Pull data from relational databases into BigQuery for analytics:
+
+```
+MySQL      → MySQL to BigQuery
+PostgreSQL → PostgreSQL to BigQuery
+SQL Server → SQLServer to BigQuery
+JDBC       → JDBC to BigQuery (with BigQuery Storage API)
+MongoDB    → MongoDB to BigQuery
+AstraDB    → AstraDB to BigQuery
+```
+
+## Available batch templates
+
+### BigQuery
+
+| Template | Description |
+|---|---|
+| BigQuery export to Parquet (via Storage API) | Exports a BigQuery table to Parquet files in Cloud Storage using the high-throughput Storage Read API. |
+| BigQuery to Bigtable | Reads a BigQuery table and writes rows to Cloud Bigtable. |
+| BigQuery to Datastore | Exports BigQuery rows as Datastore (Firestore in Datastore mode) entities. |
+| BigQuery to Elasticsearch | Indexes BigQuery rows in Elasticsearch. |
+| BigQuery to MongoDB | Inserts BigQuery rows as documents into MongoDB. |
+| BigQuery to TensorFlow Records | Exports BigQuery rows as TensorFlow TFRecord files in Cloud Storage. |
+
+### Cloud Storage
+
+| Template | Description |
+|---|---|
+| Text Files on Cloud Storage to BigQuery | Loads newline-delimited JSON or CSV text files into BigQuery. Supports UDFs for schema mapping. |
+| Text Files on Cloud Storage to BigQuery (Storage API) | Higher-throughput variant that uses the BigQuery Storage Write API. |
+| Text Files on Cloud Storage to Cloud Spanner | Loads CSV files into a Cloud Spanner table. |
+| Text Files on Cloud Storage to Firestore | Loads text files as Firestore entities. |
+| Cloud Storage to Elasticsearch | Indexes files from Cloud Storage in Elasticsearch. |
+| Cloud Storage to Splunk | Forwards files from Cloud Storage to Splunk's HEC endpoint. |
+| Avro Files on Cloud Storage to Cloud Bigtable | Loads Avro files into Cloud Bigtable. |
+| Avro Files on Cloud Storage to Cloud Spanner | Imports Avro files exported by the Spanner export pipeline. |
+| Parquet Files on Cloud Storage to Cloud Bigtable | Loads Parquet files into Cloud Bigtable. |
+| SequenceFile Files on Cloud Storage to Cloud Bigtable | Loads SequenceFile files (from HBase/Bigtable backups) into Cloud Bigtable. |
+
+### Cloud Spanner
+
+| Template | Description |
+|---|---|
+| Cloud Spanner to Avro Files on Cloud Storage | Exports a Spanner database as a set of Avro files. |
+| Cloud Spanner to Text Files on Cloud Storage | Exports Spanner table rows as CSV text files. |
+| Any SourceDB to Cloud Spanner | Migrates any JDBC-compatible database to Cloud Spanner using schema mapping. |
+
+### Cloud Bigtable
+
+| Template | Description |
+|---|---|
+| Cloud Bigtable to Avro Files in Cloud Storage | Exports Bigtable rows as Avro files. |
+| Cloud Bigtable to Parquet Files on Cloud Storage | Exports Bigtable rows as Parquet files. |
+| Cloud Bigtable to SequenceFile Files on Cloud Storage | Exports Bigtable rows as HBase-compatible SequenceFiles. |
+| Cassandra to Cloud Bigtable | Migrates a Cassandra table to Cloud Bigtable. |
+
+### Relational databases to BigQuery
+
+| Template | Description |
+|---|---|
+| MySQL to BigQuery | Reads a MySQL table and loads it into BigQuery. |
+| PostgreSQL to BigQuery | Reads a PostgreSQL table and loads it into BigQuery. |
+| SQLServer to BigQuery | Reads a SQL Server table and loads it into BigQuery. |
+| JDBC to BigQuery | Generic JDBC source to BigQuery loader. |
+| JDBC to BigQuery (Storage API) | JDBC to BigQuery with higher-throughput Storage Write API. |
+| JDBC to Pub/Sub | Publishes JDBC query results to a Pub/Sub topic. |
+| MongoDB to BigQuery | Reads documents from MongoDB and loads them into BigQuery. |
+| AstraDB to BigQuery | Reads from DataStax AstraDB (Cassandra) and loads into BigQuery. |
+| Google Ads to BigQuery | Imports Google Ads reporting data into BigQuery. |
+
+### Firestore
+
+| Template | Description |
+|---|---|
+| Firestore (Datastore mode) to BigQuery | Exports Firestore entities to a BigQuery table. Supports UDFs. |
+| Firestore (Datastore mode) to Text Files on Cloud Storage | Exports Firestore entities as text files. |
+
+### Dataplex
+
+| Template | Description |
+|---|---|
+| Dataplex JDBC Ingestion | Ingests data from a JDBC source into a Dataplex asset (BigQuery or Cloud Storage). |
+| Dataplex: Convert Cloud Storage File Format | Converts files in a Dataplex Cloud Storage asset between Avro, Parquet, and ORC. |
+| Dataplex: Tier Data from BigQuery to Cloud Storage | Moves cold BigQuery data to Cloud Storage for cost-optimised storage tiering. |
+
+### Other destinations
+
+| Template | Description |
+|---|---|
+| Google Cloud to Neo4j | Loads data from BigQuery or Cloud Storage into a Neo4j graph database. |
+
+### YAML batch templates
+
+| Template | Description |
+|---|---|
+| MySQL to Iceberg (YAML) | Bulk-loads a MySQL table into an Apache Iceberg table. |
+| PostgreSQL to Iceberg (YAML) | Bulk-loads a PostgreSQL table into an Apache Iceberg table. |
+| SQLServer to Iceberg (YAML) | Bulk-loads a SQL Server table into an Apache Iceberg table. |
+| Iceberg to Postgres (YAML) | Reads an Apache Iceberg table and writes the data to PostgreSQL. |
+
+### Utilities
+
+| Template | Description |
+|---|---|
+| Bulk Compress Files on Cloud Storage | Compresses files in Cloud Storage using gzip, bzip2, or Deflate. |
+| Bulk Decompress Files on Cloud Storage | Decompresses compressed files stored in Cloud Storage. |
+| Bulk Delete Entities in Firestore | Deletes Firestore entities in bulk. Supports UDFs to filter which entities to delete. |
+| Convert file formats between Avro, Parquet & CSV | Converts an entire Cloud Storage path of files between Avro, Parquet, and CSV formats. |
+
+## Quick start: Cloud Storage to BigQuery
+
+The following example launches the **Text Files on Cloud Storage to BigQuery** template using the `gcloud` CLI.
+
+<Steps>
+  <Step title="Set environment variables">
+    ```bash
+    export PROJECT=my-project
+    export REGION=us-central1
+    export BUCKET=my-bucket
+    # Path to newline-delimited JSON or CSV files
+    export INPUT_PATH=gs://$BUCKET/data/events/*.json
+    # BigQuery destination table
+    export OUTPUT_TABLE=$PROJECT:my_dataset.my_table
+    # BigQuery JSON schema file stored in Cloud Storage
+    export SCHEMA_PATH=gs://$BUCKET/schemas/events_schema.json
+    ```
+  </Step>
+  <Step title="Run the template">
+    ```bash
+    gcloud dataflow flex-template run "gcs-to-bq-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location \
+        "gs://dataflow-templates-$REGION/latest/flex/GCS_Text_to_BigQuery_Flex" \
+      --parameters "inputFilePattern=$INPUT_PATH" \
+      --parameters "outputTable=$OUTPUT_TABLE" \
+      --parameters "JSONPath=$SCHEMA_PATH" \
+      --parameters "javascriptTextTransformGcsPath=" \
+      --parameters "javascriptTextTransformFunctionName="
+    ```
+  </Step>
+  <Step title="Monitor the job">
+    Track progress in the [Dataflow console](https://console.cloud.google.com/dataflow/jobs). When the job reaches the **Succeeded** state, your data is available in BigQuery.
+  </Step>
+</Steps>
+
+<Tip>
+  To transform or filter rows before they land in BigQuery, pass a JavaScript UDF file path in `javascriptTextTransformGcsPath` and the function name in `javascriptTextTransformFunctionName`. See the [UDFs guide](/guides/udfs) for details.
+</Tip>

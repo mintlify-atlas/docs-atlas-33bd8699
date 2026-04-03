@@ -1,80 +1,210 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Run your first Dataflow Template pipeline using the gcloud CLI in minutes."
 ---
 
-## Get started in three steps
+This guide walks you through running a Google-provided Dataflow Template using the `gcloud` CLI. You will run the **Pub/Sub to Cloud Storage Text** template, which reads messages from a Pub/Sub topic and writes them as text files in Cloud Storage.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+<Steps>
+  <Step title="Install the gcloud CLI">
+    Download and install the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) if you have not already done so.
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    Verify installation:
 
-### Step 2: Deploy your changes
+    ```bash
+    gcloud version
+    ```
+  </Step>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+  <Step title="Authenticate">
+    Log in with your Google account and set up application default credentials:
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    ```bash
+    gcloud auth login
+    gcloud auth application-default login
+    ```
+  </Step>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+  <Step title="Set your project">
+    Set the GCP project you want to use:
 
-### Step 3: Go live
+    ```bash
+    gcloud config set project YOUR_PROJECT_ID
+    ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    Enable the Dataflow API if it is not already enabled:
+
+    ```bash
+    gcloud services enable dataflow.googleapis.com
+    ```
+  </Step>
+
+  <Step title="Create required resources">
+    Create a Cloud Storage bucket and a Pub/Sub topic for this example:
+
+    ```bash
+    # Create a Cloud Storage bucket
+    gsutil mb gs://YOUR_BUCKET_NAME
+
+    # Create a Pub/Sub topic
+    gcloud pubsub topics create YOUR_TOPIC_NAME
+    ```
+
+    <Note>
+      Replace `YOUR_BUCKET_NAME` and `YOUR_TOPIC_NAME` with names that are unique within your project.
+    </Note>
+  </Step>
+</Steps>
+
+## Run a classic template
+
+Classic Templates (v1) are staged as files in Cloud Storage. Google provides pre-staged versions you can run directly.
+
+<Steps>
+  <Step title="Set environment variables">
+    ```bash
+    export PROJECT=YOUR_PROJECT_ID
+    export BUCKET_NAME=YOUR_BUCKET_NAME
+    export REGION=us-central1
+    export INPUT_TOPIC=projects/$PROJECT/topics/YOUR_TOPIC_NAME
+    export OUTPUT_DIRECTORY=gs://$BUCKET_NAME/output/
+    ```
+  </Step>
+
+  <Step title="Run the template with gcloud">
+    The `gcloud dataflow jobs run` command launches a classic template job:
+
+    ```bash
+    gcloud dataflow jobs run "pubsub-to-gcs-text-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --gcs-location "gs://dataflow-templates-$REGION/latest/Cloud_PubSub_to_GCS_Text" \
+      --parameters "inputTopic=$INPUT_TOPIC" \
+      --parameters "outputDirectory=$OUTPUT_DIRECTORY" \
+      --parameters "outputFilenamePrefix=output-" \
+      --parameters "outputFilenameSuffix=.txt"
+    ```
+
+    The `--gcs-location` flag points to the Google-provided template path. You can also use a template you have staged yourself.
+  </Step>
+</Steps>
+
+<Tip>
+  Google pre-stages all provided templates at `gs://dataflow-templates-REGION/latest/TEMPLATE_NAME`. You do not need to build or stage anything to use them.
+</Tip>
+
+## Run a flex template
+
+Flex Templates (v2) are packaged as Docker containers. The `gcloud dataflow flex-template run` command is used instead of `gcloud dataflow jobs run`.
+
+<Steps>
+  <Step title="Set environment variables">
+    ```bash
+    export PROJECT=YOUR_PROJECT_ID
+    export BUCKET_NAME=YOUR_BUCKET_NAME
+    export REGION=us-central1
+    export INPUT_TOPIC=projects/$PROJECT/topics/YOUR_TOPIC_NAME
+    export OUTPUT_DIRECTORY=gs://$BUCKET_NAME/output/
+    export TEMPLATE_SPEC_GCSPATH="gs://dataflow-templates-$REGION/latest/flex/Cloud_PubSub_to_GCS_Text_Flex"
+    ```
+  </Step>
+
+  <Step title="Run the flex template">
+    ```bash
+    gcloud dataflow flex-template run "pubsub-to-gcs-flex-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --template-file-gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+      --parameters "inputSubscription=projects/$PROJECT/subscriptions/YOUR_SUBSCRIPTION" \
+      --parameters "outputDirectory=$OUTPUT_DIRECTORY" \
+      --parameters "outputFilenamePrefix=output-" \
+      --parameters "outputFilenameSuffix=.txt"
+    ```
+
+    <Note>
+      Flex templates use `--template-file-gcs-location` instead of `--gcs-location`, and the path includes the `flex/` prefix.
+    </Note>
+  </Step>
+</Steps>
+
+## Run via Google Cloud Console
+
+You can also launch templates through the browser without using the CLI.
+
+<Steps>
+  <Step title="Open the Dataflow console">
+    Go to the [Dataflow console](https://console.cloud.google.com/dataflow) in your GCP project.
+  </Step>
+
+  <Step title="Create a job from template">
+    Click **Create job from template**. In the **Dataflow template** dropdown, search for and select **Pub/Sub Subscription to Text Files on Cloud Storage**.
+  </Step>
+
+  <Step title="Fill in the parameters">
+    Provide values for the required parameters:
+
+    - **Input Pub/Sub subscription**: your subscription name
+    - **Output file directory in Cloud Storage**: your bucket path (e.g., `gs://YOUR_BUCKET_NAME/output/`)
+    - **Output filename prefix**: `output-`
+
+    Select a **Region** and click **Run job**.
+  </Step>
+</Steps>
+
+## Monitor the job
+
+<Tabs>
+  <Tab title="gcloud CLI">
+    List your running Dataflow jobs:
+
+    ```bash
+    gcloud dataflow jobs list --region us-central1
+    ```
+
+    Describe a specific job:
+
+    ```bash
+    gcloud dataflow jobs describe JOB_ID --region us-central1
+    ```
+
+    Stream job logs:
+
+    ```bash
+    gcloud dataflow jobs show JOB_ID --region us-central1
+    ```
+  </Tab>
+  <Tab title="Google Cloud Console">
+    Open the [Dataflow Jobs page](https://console.cloud.google.com/dataflow/jobs). Click your job to view:
+
+    - **Job graph**: the pipeline stages and data flow
+    - **Logs**: worker and job-level log output
+    - **Metrics**: throughput, element counts, and system lag (for streaming jobs)
+  </Tab>
+</Tabs>
+
+<Info>
+  For streaming templates like Pub/Sub to Cloud Storage, the job runs continuously until you cancel it. Cancel a running job with:
+
+  ```bash
+  gcloud dataflow jobs cancel JOB_ID --region us-central1
+  ```
+</Info>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Core concepts" icon="lightbulb" href="/concepts">
+    Understand classic templates, flex templates, YAML templates, and parameters
+  </Card>
+  <Card title="Template reference" icon="book" href="/templates/streaming/pubsub-to-bigquery">
+    Browse the full parameter reference for all available templates
+  </Card>
+  <Card title="Streaming templates guide" icon="water" href="/guides/streaming-templates">
+    Explore real-time pipelines for Pub/Sub, Kafka, and Datastream
+  </Card>
+  <Card title="Using UDFs" icon="function" href="/guides/udfs">
+    Customize template behavior with JavaScript User-Defined Functions
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

@@ -1,0 +1,169 @@
+---
+title: "Cloud Storage to BigQuery"
+description: "Load text or CSV files from Cloud Storage into a BigQuery table using a batch pipeline."
+---
+
+## Overview
+
+The Cloud Storage to BigQuery templates are batch pipelines that read files from Cloud Storage and write rows into a BigQuery table. Two variants are available:
+
+- **GCS Text to BigQuery** (Classic Template) — Reads arbitrary text files and applies a JavaScript UDF to transform each line into a BigQuery row. Use this when your input data is not strictly CSV or when you need custom transformation logic.
+- **GCS CSV to BigQuery** (Classic Template) — Reads CSV files directly, with built-in delimiter and encoding handling. Use this when your data is well-formed CSV and no custom transformation is needed.
+
+Both variants append to an existing BigQuery table. The destination table schema must match the output produced by the pipeline.
+
+## Parameters
+
+### GCS Text to BigQuery
+
+#### Required parameters
+
+<ParamField path="inputFilePattern" type="string" required>
+  The glob pattern path to the input text files in Cloud Storage. For example, `gs://your-bucket/path/*.txt`.
+</ParamField>
+
+<ParamField path="JSONPath" type="string" required>
+  Cloud Storage path to a JSON file that describes the BigQuery schema. For example, `gs://your-bucket/schema.json`.
+
+  The schema file must use the following structure:
+  ```json
+  {
+    "BigQuery Schema": [
+      { "name": "field_name", "type": "STRING" }
+    ]
+  }
+  ```
+</ParamField>
+
+<ParamField path="outputTable" type="string" required>
+  The fully-qualified BigQuery output table in the format `PROJECT:DATASET.TABLE`. The table schema must match the UDF output.
+</ParamField>
+
+<ParamField path="bigQueryLoadingTemporaryDirectory" type="string" required>
+  A Cloud Storage path used for temporary files during the BigQuery load. For example, `gs://your-bucket/temp_dir`.
+</ParamField>
+
+#### Optional parameters
+
+<ParamField path="javascriptTextTransformGcsPath" type="string">
+  Cloud Storage URI of the `.js` file that defines a JavaScript UDF. For example, `gs://my-bucket/my-udfs/my_file.js`.
+</ParamField>
+
+<ParamField path="javascriptTextTransformFunctionName" type="string">
+  The name of the JavaScript function to call. For example, if your function is `myTransform(inJson) { ... }`, the value is `myTransform`.
+</ParamField>
+
+### GCS CSV to BigQuery
+
+#### Required parameters
+
+<ParamField path="inputFilePattern" type="string" required>
+  The Cloud Storage path to the CSV files to process. For example, `gs://your-bucket/path/*.csv`.
+</ParamField>
+
+<ParamField path="schemaJSONPath" type="string" required>
+  The Cloud Storage path to the JSON file that defines the BigQuery schema.
+</ParamField>
+
+<ParamField path="outputTable" type="string" required>
+  The name of the BigQuery destination table. Data is appended if the table already exists.
+</ParamField>
+
+<ParamField path="bigQueryLoadingTemporaryDirectory" type="string" required>
+  Temporary Cloud Storage directory for the BigQuery loading process. For example, `gs://your-bucket/temp_dir`.
+</ParamField>
+
+<ParamField path="badRecordsOutputTable" type="string" required>
+  The BigQuery table where rejected records are written. The table schema must match the error table schema. Data is appended if the table already exists.
+</ParamField>
+
+<ParamField path="delimiter" type="string" required>
+  The column delimiter character used in the CSV files. For example, `,`.
+</ParamField>
+
+<ParamField path="csvFormat" type="string" required>
+  The CSV format according to Apache Commons CSV. For example, `Default`. Defaults to `Default`.
+</ParamField>
+
+#### Optional parameters
+
+<ParamField path="containsHeaders" type="boolean">
+  Whether the CSV files include a header row. Defaults to `false`.
+</ParamField>
+
+<ParamField path="csvFileEncoding" type="string">
+  Character encoding of the CSV files. Allowed values: `US-ASCII`, `ISO-8859-1`, `UTF-8`, `UTF-16`. Defaults to `UTF-8`.
+</ParamField>
+
+## Running the template
+
+### GCS Text to BigQuery
+
+<Steps>
+  <Step title="Run with gcloud">
+    ```bash
+    export PROJECT="PROJECT_ID"
+    export REGION="us-central1"
+    export TEMPLATE_SPEC_GCSPATH="gs://dataflow-templates-${REGION}/latest/GCS_Text_to_BigQuery"
+
+    gcloud dataflow jobs run "gcs-text-to-bigquery-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+      --parameters "inputFilePattern=gs://your-bucket/path/*.txt" \
+      --parameters "JSONPath=gs://your-bucket/schema.json" \
+      --parameters "outputTable=your-project:your_dataset.your_table" \
+      --parameters "bigQueryLoadingTemporaryDirectory=gs://your-bucket/temp" \
+      --parameters "javascriptTextTransformGcsPath=gs://your-bucket/udf.js" \
+      --parameters "javascriptTextTransformFunctionName=transform"
+    ```
+  </Step>
+</Steps>
+
+### GCS CSV to BigQuery
+
+<Steps>
+  <Step title="Run with gcloud">
+    ```bash
+    export PROJECT="PROJECT_ID"
+    export REGION="us-central1"
+    export TEMPLATE_SPEC_GCSPATH="gs://dataflow-templates-${REGION}/latest/GCS_CSV_to_BigQuery"
+
+    gcloud dataflow jobs run "gcs-csv-to-bigquery-job" \
+      --project "$PROJECT" \
+      --region "$REGION" \
+      --gcs-location "$TEMPLATE_SPEC_GCSPATH" \
+      --parameters "inputFilePattern=gs://your-bucket/path/*.csv" \
+      --parameters "schemaJSONPath=gs://your-bucket/schema.json" \
+      --parameters "outputTable=your-project:your_dataset.your_table" \
+      --parameters "bigQueryLoadingTemporaryDirectory=gs://your-bucket/temp" \
+      --parameters "badRecordsOutputTable=your-project:your_dataset.bad_records" \
+      --parameters "delimiter=," \
+      --parameters "csvFormat=Default" \
+      --parameters "containsHeaders=true"
+    ```
+  </Step>
+</Steps>
+
+## UDF support
+
+The GCS Text to BigQuery template supports JavaScript UDFs. A UDF receives each input line as a JSON string and must return a JSON string representing the output row.
+
+**Example UDF:**
+
+```javascript
+function transform(inJson) {
+  var obj = JSON.parse(inJson);
+  // modify obj as needed
+  return JSON.stringify(obj);
+}
+```
+
+Store the `.js` file in Cloud Storage and pass its URI via `javascriptTextTransformGcsPath`.
+
+## Notes
+
+- **Schema options** — For the Text template, the `JSONPath` parameter points to a schema file stored in Cloud Storage. For the CSV template, use `schemaJSONPath`. Both accept the same schema file format.
+- **Input file compression** — The CSV template supports compressed input files (e.g., gzip). Supported compression types are defined by the [Apache Beam Compression enum](https://beam.apache.org/releases/javadoc/current/org/apache/beam/sdk/io/Compression.html).
+- **Bad records** — The CSV template routes rows that fail parsing to `badRecordsOutputTable`. The Text template relies on the UDF to handle malformed input.
+- **Table existence** — Both templates append to existing tables. They do not create the destination table; the table and its schema must exist before running the pipeline.

@@ -1,0 +1,144 @@
+---
+title: "Development setup"
+description: "Install prerequisites, configure your IDE, and authenticate with Google Cloud to start contributing to Dataflow Templates."
+---
+
+## Prerequisites
+
+Before contributing, make sure you have the following tools installed:
+
+<CardGroup cols={3}>
+  <Card title="Java 17" icon="java">
+    Required runtime and compiler for all template code.
+  </Card>
+  <Card title="Maven 3" icon="box">
+    Build system used for compiling, testing, and packaging templates.
+  </Card>
+  <Card title="gcloud CLI" icon="cloud">
+    Google Cloud SDK for authentication and template execution.
+  </Card>
+</CardGroup>
+
+If you are not already familiar with Dataflow, Dataflow Templates, and Apache Beam, review the following resources before contributing:
+
+- [Dataflow overview](https://cloud.google.com/dataflow/docs/overview)
+- [Dataflow Templates concepts](https://cloud.google.com/dataflow/docs/concepts/dataflow-templates)
+- [Flex Templates guide](https://cloud.google.com/dataflow/docs/guides/templates/using-flex-templates)
+- [Apache Beam programming guide](https://beam.apache.org/documentation/programming-guide/)
+
+## IDE setup
+
+### IntelliJ (recommended)
+
+<Tabs>
+  <Tab title="v1 templates">
+    Open the project at the root directory and use Maven from there. No additional configuration is needed.
+  </Tab>
+  <Tab title="v2 templates">
+    Open the project at the root directory, then find the **Add Maven Project** action and add the `v2/` directory. Let the project rebuild before running any goals.
+  </Tab>
+</Tabs>
+
+### Fixing IntelliJ build failures
+
+IntelliJ skips certain Maven goals by default, which can cause build failures. To fix this, go to **Module_Name > Plugins > Plugin_Name** in the Maven view, right-click the rule, and select **Execute Before Build**.
+
+The following rules require this:
+
+- `common > Plugins > protobuf > protobuf:compile`
+- `common > Plugins > protobuf > protobuf:test-compile`
+
+## Apple M1 / ARM setup
+
+To build the project using Maven on Apple Silicon, add the following profile to `~/.m2/settings.xml`. Create the file if it does not already exist.
+
+```xml ~/.m2/settings.xml
+<settings>
+  <activeProfiles>
+    <activeProfile>
+      apple-silicon
+    </activeProfile>
+  </activeProfiles>
+  <profiles>
+    <profile>
+      <id>apple-silicon</id>
+      <properties>
+        <os.detected.classifier>osx-x86_64</os.detected.classifier>
+      </properties>
+    </profile>
+  </profiles>
+</settings>
+```
+
+## Maven commands reference
+
+Run all Maven commands from the parent POM (the root of the repository). Use `-pl` to target a specific module.
+
+```bash
+# Compile a specific module and its dependencies
+mvn clean compile -pl v2/pubsub-binary-to-bigquery -am
+
+# Build the entire project
+mvn clean compile
+
+# Run tests for a module
+mvn clean test -pl v2/wordcount -am
+
+# Format code (adds license headers, fixes style)
+mvn spotless:apply
+
+# Verify code formatting without modifying files
+mvn spotless:check
+```
+
+<Tip>
+  Run `mvn spotless:apply` before opening a pull request to fix any formatting issues automatically.
+</Tip>
+
+## Building the project
+
+To build the entire project, run the Maven compile command from the root directory:
+
+```bash
+mvn clean compile
+```
+
+To build a single module and all of its required dependencies:
+
+```bash
+mvn clean install -pl v2/<module-name> -am -Dmaven.test.skip
+```
+
+The `-am` flag ensures all local dependencies are included in the build. Use `-Dmaven.test.skip` to skip tests during a build-only pass.
+
+## Installing the Templates Maven Plugin
+
+The Templates Maven Plugin simplifies staging, running, validating, and generating Terraform for templates. Install it into your local Maven repository before use:
+
+```bash
+mvn clean install -pl plugins/templates-maven-plugin -am
+```
+
+<Warning>
+  After making any changes to the plugin itself, reinstall it with the same command. Changes may be cached and prevent new modifications from taking effect.
+</Warning>
+
+## gcloud authentication
+
+The Templates Maven Plugin requires an authenticated gcloud CLI. Run the following commands to set up authentication:
+
+```bash
+# Initialize gcloud and set your default project
+gcloud init
+
+# Authenticate the Application Default Credentials used by the plugin
+gcloud auth application-default login
+```
+
+For staging templates that use Docker images, you also need to configure Docker authentication:
+
+```bash
+gcloud auth configure-docker
+```
+
+Once authenticated and the plugin is installed, you can stage or run templates directly from Maven. See [Creating Flex Templates](/development/creating-flex-templates) for next steps.
